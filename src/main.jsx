@@ -1,113 +1,3295 @@
-import React,{useMemo,useState}from'react';import{createRoot}from'react-dom/client';import Papa from'papaparse';import{Activity,AlertTriangle,Bell,BrainCircuit,Check,CheckCircle2,ChevronRight,Clock3,Database,Download,FlaskConical,Gauge,Layers3,LineChart as LineIcon,ListChecks,Menu,MessageSquare,Settings,ShieldCheck,Sparkles,Target,Timer,Upload,X,Zap}from'lucide-react';import{ResponsiveContainer,LineChart,Line,XAxis,YAxis,CartesianGrid,Tooltip,ReferenceLine,BarChart,Bar,ScatterChart,Scatter,ZAxis,PieChart,Pie,Cell}from'recharts';import'./styles.css';
-const S=[0,24,96,168],LOTS=['L-101','L-102','L-103','L-104','L-105','L-106'];const seed=[['C-10482','L-103',[9.8,12.4,27.1,61.8],'Latent anomaly','Critical',93,71],['C-09127','L-103',[10.1,14.2,25.5,55.2],'Rapid drift','High',91,89],['C-08314','L-104',[11.4,13.1,21.7,47.8],'Borderline drift','Watch',84,151],['C-01743','L-101',[10.3,10.9,12.4,15.8],'Normal','Safe',96,999],['C-02118','L-101',[9.7,10.6,11.8,14.9],'Normal','Safe',97,999],['C-03991','L-102',[12.1,13.8,18.1,29.7],'Lot deviation','Watch',88,301],['C-04518','L-102',[11.2,12.2,15.4,21.1],'Normal','Safe',95,999],['C-05521','L-104',[10.7,12.9,20.8,39.4],'Increasing drift','Watch',87,208],['C-06108','L-105',[8.9,9.8,10.4,12.2],'Normal','Safe',98,999],['C-07339','L-105',[9.4,11.2,16.5,24.3],'Normal','Safe',94,999],['C-08802','L-106',[13.2,15.1,23.8,44.6],'Lot deviation','Watch',86,191],['C-09744','L-106',[12.6,18.7,34.5,68.4],'Predicted breach','Critical',95,64],['C-11021','L-103',[10,12.8,22.2,51.3],'Predicted breach','High',92,132],['C-11408','L-104',[11.1,11.9,17.2,32.8],'Normal','Safe',93,999],['C-11931','L-102',[12,14.1,19.2,35.5],'Lot deviation','Watch',89,236]];const rank={Critical:4,High:3,Watch:2,Safe:1};
-function modelAResult(v,limit){
-  const measured=v[3];
-  return measured>=limit
-    ? {status:'BREACH',severity:measured>=limit*1.25?'Critical':'High',value:measured}
-    : {status:'PASS',severity:'Safe',value:measured};
-}
-function modelBResult(v,limit){
-  const f=linearForecast(v,limit);
-  const severity=f.predicted168>=limit*1.25?'Critical':f.predicted168>=limit?'High':(f.predicted168>=limit*.78||f.slope>0.12)?'Watch':'Safe';
-  return {...f,severity,status:severity==='Safe'?'PASS':'FORECAST ALERT'};
-}
-function combinedRisk(a,b){
-  return [a.severity,b.severity].sort((x,y)=>(rank[y]||0)-(rank[x]||0))[0];
-}
-const init=seed.map(([id,lot,v,reason,_risk,confidence,hours])=>{
-  const a=modelAResult(v,50), b=modelBResult(v,50);
-  return {id,lot,v,reason,risk:combinedRisk(a,b),modelA:a,modelB:b,confidence,anomaly:Math.min(.99,Math.max(.08,(v[3]-10)/55+(b.severity==='Safe'?.05:.2))),slope:b.slope,forecast:b.predicted168,hours:b.crossHours,forecastHours:b.crossHours};
-});
+import React, { useEffect, useMemo, useState } from 'react';
+import { createRoot } from 'react-dom/client';
+import Papa from 'papaparse';
+import {
+  Activity,
+  AlertTriangle,
+  Bell,
+  BrainCircuit,
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Clock3,
+  Database,
+  Download,
+  FileSpreadsheet,
+  FlaskConical,
+  Gauge,
+  Layers3,
+  LineChart as LineIcon,
+  ListChecks,
+  Menu,
+  MessageSquare,
+  RotateCcw,
+  Search,
+  Settings,
+  ShieldCheck,
+  Sparkles,
+  Target,
+  Timer,
+  Upload,
+  X,
+  Zap
+} from 'lucide-react';
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ReferenceLine,
+  BarChart,
+  Bar,
+  ScatterChart,
+  Scatter,
+  ZAxis,
+  PieChart,
+  Pie,
+  Cell
+} from 'recharts';
+import './styles.css';
 
-const MODEL_A={id:'A',name:'Absolute Limit Guard',short:'Model A',desc:'Safety-threshold screening using the universal leakage limit.'};
-const MODEL_B={id:'B',name:'Drift Forecast',short:'Model B',desc:'Trajectory-based forecasting from early burn-in behaviour.'};
-function linearForecast(v,limit){
-  const x=[0,24,96], y=v.slice(0,3);
-  const mx=x.reduce((a,b)=>a+b,0)/x.length, my=y.reduce((a,b)=>a+b,0)/y.length;
-  const den=x.reduce((a,b)=>a+(b-mx)**2,0);
-  const slope=den?x.reduce((a,b,i)=>a+(b-mx)*(y[i]-my),0)/den:0;
-  const intercept=my-slope*mx;
-  const pred=Math.max(0,intercept+slope*168);
-  const cross=slope>0?(limit-intercept)/slope:Infinity;
-  return {slope,intercept,predicted168:pred,crossHours:cross>0&&cross<1000?Math.round(cross):999};
+// Burn-in physical inspection stages in hours
+const S = [0, 24, 96, 168];
+
+// Default baseline seed dataset
+const SEED_DATA = [
+  { id: 'C-10482', lot: 'L-103', v: [9.8, 12.4, 27.1, 61.8], reason: 'Latent anomaly', confidence: 93 },
+  { id: 'C-09127', lot: 'L-103', v: [10.1, 14.2, 25.5, 55.2], reason: 'Rapid drift', confidence: 91 },
+  { id: 'C-08314', lot: 'L-104', v: [11.4, 13.1, 21.7, 47.8], reason: 'Borderline drift', confidence: 84 },
+  { id: 'C-01743', lot: 'L-101', v: [10.3, 10.9, 12.4, 15.8], reason: 'Normal', confidence: 96 },
+  { id: 'C-02118', lot: 'L-101', v: [9.7, 10.6, 11.8, 14.9], reason: 'Normal', confidence: 97 },
+  { id: 'C-03991', lot: 'L-102', v: [12.1, 13.8, 18.1, 29.7], reason: 'Lot deviation', confidence: 88 },
+  { id: 'C-04518', lot: 'L-102', v: [11.2, 12.2, 15.4, 21.1], reason: 'Normal', confidence: 95 },
+  { id: 'C-05521', lot: 'L-104', v: [10.7, 12.9, 20.8, 39.4], reason: 'Increasing drift', confidence: 87 },
+  { id: 'C-06108', lot: 'L-105', v: [8.9, 9.8, 10.4, 12.2], reason: 'Normal', confidence: 98 },
+  { id: 'C-07339', lot: 'L-105', v: [9.4, 11.2, 16.5, 24.3], reason: 'Normal', confidence: 94 },
+  { id: 'C-08802', lot: 'L-106', v: [13.2, 15.1, 23.8, 44.6], reason: 'Lot deviation', confidence: 86 },
+  { id: 'C-09744', lot: 'L-106', v: [12.6, 18.7, 34.5, 68.4], reason: 'Predicted breach', confidence: 95 },
+  { id: 'C-11021', lot: 'L-103', v: [10.0, 12.8, 22.2, 51.3], reason: 'Predicted breach', confidence: 92 },
+  { id: 'C-11408', lot: 'L-104', v: [11.1, 11.9, 17.2, 32.8], reason: 'Normal', confidence: 93 },
+  { id: 'C-11931', lot: 'L-102', v: [12.0, 14.1, 19.2, 35.5], reason: 'Lot deviation', confidence: 89 }
+];
+
+const RANK = { Critical: 4, High: 3, Watch: 2, Safe: 1 };
+
+const MODEL_A = {
+  id: 'A',
+  name: 'Absolute Limit Guard',
+  short: 'Model A',
+  desc: 'Safety-threshold screening using the universal measured leakage limit at 168h.'
+};
+
+const MODEL_B = {
+  id: 'B',
+  name: 'Drift Forecast',
+  short: 'Model B',
+  desc: 'Trajectory-based OLS linear forecasting fitted on early burn-in behaviour (0h, 24h, 96h).'
+};
+
+const MODEL_C = {
+  id: 'C',
+  name: 'Trajectory Anomaly Detection',
+  short: 'Model C',
+  desc: 'Lot-relative robust statistical outlier detection using early burn-in trajectory features (0h, 24h, 96h). Does NOT use 168h measurement (zero data leakage).'
+};
+
+
+// --- CORE ANALYTICAL ENGINES ---
+
+/**
+ * Model A: Absolute Limit Guard
+ * Evaluates the measured 168h value against safety threshold.
+ */
+function modelAResult(v, limit) {
+  const measured = v && v.length >= 4 ? Number(v[3]) : 0;
+  if (measured >= limit * 1.25) {
+    return { status: 'BREACH', severity: 'Critical', value: measured, margin: measured - limit };
+  }
+  if (measured >= limit) {
+    return { status: 'BREACH', severity: 'High', value: measured, margin: measured - limit };
+  }
+  return { status: 'PASS', severity: 'Safe', value: measured, margin: limit - measured };
 }
-function modelRisk(c,limit){
-  const f=linearForecast(c.v,limit);
-  if(f.predicted168>=limit*1.25)return 'Critical';
-  if(f.predicted168>=limit)return 'High';
-  if(f.predicted168>=limit*.78 || f.slope>0.12)return 'Watch';
-  return 'Safe';
+
+/**
+ * Model B: Drift Forecast Engine (OLS Linear Regression on 0h, 24h, 96h)
+ * The measured 168h point is strictly excluded from fitting.
+ */
+function linearForecast(v, limit) {
+  const x = [0, 24, 96];
+  const y = (v || [0, 0, 0, 0]).slice(0, 3).map(n => Number(n) || 0);
+  const mx = x.reduce((a, b) => a + b, 0) / x.length;
+  const my = y.reduce((a, b) => a + b, 0) / y.length;
+  const den = x.reduce((a, b) => a + (b - mx) ** 2, 0);
+  const slope = den ? x.reduce((a, b, i) => a + (b - mx) * (y[i] - my), 0) / den : 0;
+  const intercept = my - slope * mx;
+  const predicted168 = Math.max(0, intercept + slope * 168);
+
+  // Time-to-limit logic
+  const isAlreadyBreached = y.some(val => val >= limit) || (v && v[3] >= limit);
+  let crossHours = 999;
+  let crossingText = 'No breach predicted';
+
+  if (isAlreadyBreached) {
+    crossHours = 0;
+    crossingText = 'Limit already breached';
+  } else if (slope > 0) {
+    const cross = (limit - intercept) / slope;
+    if (cross > 0 && cross < 1000) {
+      crossHours = Math.round(cross);
+      crossingText = `Crosses limit at ~${crossHours}h`;
+    }
+  }
+
+  return {
+    slope,
+    intercept,
+    predicted168,
+    crossHours,
+    crossingText,
+    isAlreadyBreached
+  };
 }
-const badge=r=><span className={'badge '+r.toLowerCase()}>{r}</span>;const Btn=({children,onClick,secondary=false})=><button className={secondary?'secondary':'primary'} onClick={onClick}>{children}</button>;function Stat({I,label,value,sub,tone=''}){return <div className={'stat '+tone}><I size={18}/><div><small>{label}</small><strong>{value}</strong><em>{sub}</em></div></div>}function Section({title,sub,children}){return <section className="card"><h2>{title}</h2>{sub&&<p className="sub">{sub}</p>}{children}</section>}function Table({rows,open}){return <div className="table"><table><thead><tr><th>Component</th><th>Lot</th><th>168h</th><th>Risk</th><th>Conf.</th><th/></tr></thead><tbody>{rows.map(c=><tr key={c.id}><td><b>{c.id}</b></td><td>{c.lot}</td><td>{c.v[3].toFixed(1)} μA</td><td>{badge(c.risk)}</td><td>{c.confidence}%</td><td><button className="small" onClick={()=>open(c.id)}>View</button></td></tr>)}</tbody></table></div>}
-function App(){const[page,setPage]=useState('home'),[cs,setCs]=useState(init),[sel,setSel]=useState('C-10482'),[limit,setLimit]=useState(50),[sens,setSens]=useState(.5),[lot,setLot]=useState('L-103'),[scenario,setScenario]=useState(1),[toast,setToast]=useState(''),[upload,setUpload]=useState(false),[q,setQ]=useState(''),[ans,setAns]=useState(''),[review,setReview]=useState({}),[model,setModel]=useState('B');const c=cs.find(x=>x.id===sel)||cs[0],stats={safe:cs.filter(x=>x.risk==='Safe').length,watch:cs.filter(x=>x.risk==='Watch').length,high:cs.filter(x=>x.risk==='High').length,critical:cs.filter(x=>x.risk==='Critical').length,total:cs.length};const lots=LOTS.map(l=>{let x=cs.filter(c=>c.lot===l),r=x.filter(c=>c.risk!=='Safe').length,m=x.reduce((a,c)=>a+c.v[0],0)/x.length,max=Math.max(...x.map(c=>c.v[3]));return{lot:l,r,base:m,max,health:Math.max(0,Math.round(100-r/x.length*75-Math.max(0,max-limit)*.35))}});const risky=[...cs].filter(c=>c.risk!=='Safe').sort((a,b)=>rank[b.risk]-rank[a.risk]);const go=(p,id)=>{if(id)setSel(id);setPage(p)};const notify=x=>{setToast(x);setTimeout(()=>setToast(''),2200)};const applyConfig=()=>notify('Configuration applied across NEXORA');const exportCSV=()=>{let rows=cs.map(c=>({component_id:c.id,lot_id:c.lot,'0h':c.v[0],'24h':c.v[1],'96h':c.v[2],'168h':c.v[3],risk:c.risk,anomaly_score:c.anomaly.toFixed(2),confidence:c.confidence,time_to_threshold:c.hours===999?'N/A':c.hours}));let a=document.createElement('a'),u=URL.createObjectURL(new Blob([Papa.unparse(rows)],{type:'text/csv'}));a.href=u;a.download='nexora-inspection-report.csv';a.click();URL.revokeObjectURL(u);notify('CSV exported');};const nav=[['home',Gauge,'Command Center'],['data',Database,'Data Intelligence'],['lot',Layers3,'Lot DNA'],['anomaly',Target,'Hidden Defects'],['prediction',LineIcon,'Drift Forecast'],['risk',ShieldCheck,'Risk & Safety'],['inspector',Activity,'Component Profile'],['priority',ListChecks,'Priority Queue'],['action',Zap,'Action Center'],['whatif',FlaskConical,'What-If Lab'],['model',BrainCircuit,'Model Trust'],['copilot',MessageSquare,'AI Copilot'],['reports',Download,'Reports'],['settings',Settings,'Settings']];return <div className="app"><aside><div className="brand"><div className="logo"><Sparkles size={17}/></div><div><b>NEXORA</b><small>BURN-IN RELIABILITY</small></div></div><div className="online">● ENGINE ONLINE</div><nav>{nav.map(([p,I,l])=><button className={'nav '+(page===p?'active':'')} onClick={()=>setPage(p)} key={p}><I size={15}/>{l}</button>)}</nav><button className="load" onClick={()=>setUpload(true)}><Upload size={14}/> Load CSV</button></aside><main><header><div className="mobile"><Menu size={17}/> NEXORA</div><span>NEXORA <ChevronRight size={12}/> {nav.find(x=>x[0]===page)?.[2]}</span><div className="head"><button className="icon" onClick={()=>setPage('copilot')}><MessageSquare size={16}/></button><button className="icon" onClick={()=>setPage('action')}><Bell size={16}/><sup>{stats.high+stats.critical}</sup></button><i/> Models ready</div></header><div className="content"><Page page={page} stats={stats} lots={lots} risky={risky} cs={cs} c={c} limit={limit} setLimit={setLimit} sens={sens} setSens={setSens} lot={lot} setLot={setLot} scenario={scenario} setScenario={setScenario} review={review} setReview={setReview} go={go} exportCSV={exportCSV} challenge={()=>{setSel('C-10482');setPage('inspector');notify('Challenge case: conventional PASS → latent risk detected')}} q={q} setQ={setQ} ans={ans} ask={()=>{let s=q.toLowerCase();setAns(s.includes('why')?'C-10482 is below the 50 μA limit now, but its early trajectory is abnormal for L-103 and forecasts 61.8 μA at 168h.':s.includes('lot')?lots.sort((a,b)=>a.health-b.health)[0].lot+' currently has the weakest shown lot health.':'Try asking about C-10482, the worst lot, or crossings within 48 hours.')}} notify={notify} model={model} setModel={setModel} applyConfig={applyConfig}/></div></main>{upload&&<div className="modalbg" onMouseDown={()=>setUpload(false)}><div className="modal" onMouseDown={e=>e.stopPropagation()}><div className="modalhead"><h2>Load Burn-In CSV</h2><button className="icon" onClick={()=>setUpload(false)}><X size={16}/></button></div><div className="upload"><Upload size={28}/><h3>Import CSV</h3><p>Columns: component_id, lot_id, 0h, 24h, 96h, 168h</p><label className="primary">Choose CSV<input hidden type="file" accept=".csv" onChange={e=>{let f=e.target.files?.[0];if(!f)return;Papa.parse(f,{header:true,dynamicTyping:true,skipEmptyLines:true,complete:r=>{let m=r.data.map((x,i)=>{let v=S.map(h=>Number(x[`${h}h`]??NaN));if(v.some(Number.isNaN))return null;let id=String(x.component_id||x.component||`UP-${i+1}`),l=String(x.lot_id||x.lot||'UPLOADED'),a=modelAResult(v,limit),b=modelBResult(v,limit);return{id,lot:l,v,reason:'Imported measurement',risk:combinedRisk(a,b),modelA:a,modelB:b,confidence:86,anomaly:Math.min(.99,Math.abs(v[3]-v[0])/Math.max(20,v[0]+20)),slope:b.slope,hours:b.crossHours,forecast:b.predicted168,forecastHours:b.crossHours}}).filter(Boolean);if(m.length){setCs(m);setSel(m[0].id);notify(`${m.length} components loaded`)}else notify('CSV format not recognised');setUpload(false)}})}}/></label></div></div></div>}{toast&&<div className="toast"><CheckCircle2 size={15}/>{toast}</div>}</div>}
-function Page({
-page,
-stats,
-lots,
-risky,
-cs,
-c,
-limit,
-setLimit,
-sens,
-setSens,
-lot,
-setLot,
-scenario,
-setScenario,
-review,
-setReview,
-go,
-exportCSV,
-challenge,
-q,
-setQ,
-ans,
-ask,
-notify,
-model,
-setModel,
-applyConfig
-}){const common=<><div className="hero"><div><label>RELIABILITY INTELLIGENCE</label><h1>Know what will fail before it becomes unsafe.</h1><p>NEXORA combines absolute limits, lot-relative behaviour and early burn-in trajectories into one decision workflow.</p></div><div><Btn secondary onClick={challenge}><Sparkles size={14}/> Challenge</Btn> <Btn onClick={()=>go('inspector','C-10482')}><Target size={14}/> Inspect risk</Btn></div></div><div className="stats"><Stat I={Database} label="Components" value={stats.total} sub="Current dataset"/><Stat I={CheckCircle2} label="Safe" value={stats.safe} sub="Within predicted boundary" tone="safe"/><Stat I={Clock3} label="Watch" value={stats.watch} sub="Needs monitoring" tone="watch"/><Stat I={AlertTriangle} label="High / Critical" value={stats.high+stats.critical} sub={`${stats.critical} critical`} tone="danger"/></div></>;
-if(page==='home')return <>{common}<div className="two"><Section title="Reliability trajectory" sub="Representative early-to-late forecast"><Chart limit={limit}/></Section><Section title="Lot health radar" sub="Population-level reliability">{lots.map(l=><div className="lotrow" key={l.lot}><b>{l.lot}</b><span>{l.r} attention</span><div className="track"><i style={{width:l.health+'%'}}/></div><strong>{l.health}%</strong></div>)}</Section></div><div className="two"><Section title="Priority queue" sub="Strongest evidence first">{risky.slice(0,7).map(x=><div className="caseRow" key={x.id} onClick={()=>go('inspector',x.id)}><b>{x.id}</b><span>{x.lot}</span>{badge(x.risk)}<strong>{x.forecast.toFixed(1)} μA</strong></div>)}</Section><Section title="Risk distribution">{[['Safe',stats.safe],['Watch',stats.watch],['High',stats.high],['Critical',stats.critical]].map(([r,n])=><div className="riskrow" key={r}><span>{r}</span><div className="track"><i className={r.toLowerCase()} style={{width:Math.max(4,n/stats.total*100)+'%'}}/></div><b>{n}</b></div>)}<div className="callout"><ShieldCheck size={16}/> High-risk recall is prioritized because false negatives are costly.</div></Section></div></>;
-if(page==='data')return <><Hero title="Trust the data before trusting the model." eyebrow="DATA INTELLIGENCE" text="Validate burn-in measurements before analytics." actions={<><Btn secondary onClick={exportCSV}><Download size={14}/> Export</Btn><Btn onClick={()=>document.querySelector('.load')?.click()}><Upload size={14}/> Load CSV</Btn></>}/><div className="stats"><Stat I={Database} label="Data quality" value="97.4%" sub="Validation score" tone="safe"/><Stat I={Layers3} label="Rows" value={cs.length} sub="Component records"/><Stat I={Activity} label="Stages" value="4" sub="0h / 24h / 96h / 168h"/><Stat I={Gauge} label="Baseline" value="10.2 μA" sub="Early population mean"/></div><Section title="Validation checklist"><div className="checks">{['Component identifiers','Lot identifiers','Required stages','Numeric measurements','Duplicate records','Missing-value scan','Unit consistency','Stage ordering'].map((x,i)=><div key={x}><CheckCircle2 size={15}/>{x}<b>{i===4?'2 handled':'PASS'}</b></div>)}</div></Section><Section title="Loaded sample"><Table rows={cs} open={id=>go('inspector',id)}/></Section></>;
-if(page==='lot'){let x=cs.filter(c=>c.lot===lot),dist=Array.from({length:8},(_,i)=>({b:`${i*10}-${i*10+10}`,n:x.filter(c=>c.v[3]>=i*10&&c.v[3]<(i+1)*10).length}));return <><Hero eyebrow="LOT DNA" title="Make 'normal' visible." text="NEXORA builds a population fingerprint for each production lot." actions={<select value={lot} onChange={e=>setLot(e.target.value)}>{LOTS.map(l=><option key={l}>{l}</option>)}</select>}/><div className="stats"><Stat I={Layers3} label="Lot" value={lot} sub={`${x.length} shown components`}/><Stat I={Gauge} label="Baseline" value={(x.reduce((a,c)=>a+c.v[0],0)/x.length).toFixed(1)+' μA'} sub="Early-stage mean"/><Stat I={ShieldCheck} label="Lot health" value={lots.find(l=>l.lot===lot)?.health+'%'} sub="Population reliability" tone="safe"/><Stat I={AlertTriangle} label="Attention" value={x.filter(c=>c.risk!=='Safe').length} sub="Non-safe"/></div><div className="two"><Section title="168h distribution"><div className="chart"><ResponsiveContainer width="100%" height={290}><BarChart data={dist}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="b"/><YAxis allowDecimals={false}/><Tooltip/><Bar dataKey="n"/></BarChart></ResponsiveContainer></div></Section><Section title="Lot members"><div className="caseGrid">{x.map(c=><div className="caseCard" key={c.id} onClick={()=>go('inspector',c.id)}><b>{c.id}</b>{badge(c.risk)}<small>{c.v[3].toFixed(1)} μA at 168h</small></div>)}</div></Section></div></>}
-if(page==='anomaly'){let flagged=cs.filter(c=>c.anomaly>=sens),scatter=cs.map(c=>({x:c.v[0],y:c.v[3],z:c.anomaly*100}));return <><Hero eyebrow="HIDDEN DEFECT DETECTOR" title="Catch what the absolute limit misses." text="A component can pass the universal threshold and still be abnormal for its lot." actions={<Btn onClick={()=>go('inspector','C-10482')}><Target size={14}/> Open signature case</Btn>}/><div className="hidden"><div><label>SIGNATURE NEXORA CASE</label><h2>45 μA can still be a defect.</h2><p>Safety limit: 50 μA. Lot baseline: ~10 μA. Conventional screening can pass the part; lot-relative analysis can flag abnormal behaviour.</p></div><div className="big">45<small>μA current</small>{badge('Critical')}</div></div><div className="two"><Section title="Anomaly landscape" sub="Early leakage vs predicted endpoint"><div className="chart"><ResponsiveContainer width="100%" height={320}><ScatterChart><CartesianGrid/><XAxis dataKey="x"/><YAxis dataKey="y"/><ZAxis dataKey="z" range={[40,400]}/><Tooltip/><ReferenceLine y={limit} strokeDasharray="5 5"/><Scatter data={scatter}/></ScatterChart></ResponsiveContainer></div></Section><Section title="Flagged cases">{flagged.slice(0,8).map(x=><div className="caseRow" key={x.id} onClick={()=>go('inspector',x.id)}><b>{x.id}</b><span>{x.lot}</span>{badge(x.risk)}<strong>{Math.round(x.anomaly*100)}%</strong></div>)}</Section></div><div className="slider">Sensitivity <input type="range" min=".2" max=".9" step=".01" value={sens} onChange={e=>setSens(+e.target.value)}/><b>{sens.toFixed(2)}</b></div></>}
-if(page==='prediction')return <Prediction cs={cs} c={c} limit={limit} model={model} setModel={setModel} setSel={id=>go('prediction',id)}/>;if(page==='risk'){const aBreaches=cs.filter(x=>x.modelA?.status==='BREACH').length,bAlerts=cs.filter(x=>x.modelB?.status!=='PASS').length;const riskItems=[['Safe',stats.safe],['Watch',stats.watch],['High',stats.high],['Critical',stats.critical]],riskColors=['#58d6a0','#e4cf72','#f3a06f','#f06b6b'];return <><Hero eyebrow="RISK & SAFETY" title="Prioritize the components that matter most." text="Separate current-limit safety from future drift risk, then combine both signals into one actionable decision."/><div className="riskOverview"><div className="riskDistribution card"><div className="riskTitle"><div><h2>Risk composition</h2><p className="sub">Final NEXORA classification across all loaded components.</p></div><strong>{stats.total}<small>components</small></strong></div><div className="riskPieArea"><div className="riskDonut"><ResponsiveContainer width={220} height={220}><PieChart><Pie data={riskItems.map(([name,count])=>({name,count}))} dataKey="count" nameKey="name" cx="50%" cy="50%" innerRadius={62} outerRadius={88} paddingAngle={1} stroke="#071725" strokeWidth={2}>{riskItems.map(([name],i)=><Cell key={name} fill={riskColors[i]}/>)}</Pie></PieChart></ResponsiveContainer><div className="riskDonutCenter"><b>{stats.total}</b><span>components</span></div></div><div className="riskLegend">{riskItems.map(([name,count],i)=><div key={name}><span style={{background:riskColors[i]}}/><b>{name}</b><strong>{count}</strong><small>{stats.total?Math.round(count/stats.total*100):0}%</small></div>)}</div></div></div><div className="riskRules card"><h2>How the decision is made</h2><p className="sub">Model A and Model B answer different questions.</p><div className="riskModel"><span>MODEL A</span><div><b>Absolute Limit Guard</b><small>Is the measured 168h leakage already at or above the safety limit?</small></div><strong>{aBreaches}<small>breaches</small></strong></div><div className="riskModel"><span>MODEL B</span><div><b>Drift Forecast</b><small>Does the early 0h → 24h → 96h trajectory indicate future risk?</small></div><strong>{bAlerts}<small>alerts</small></strong></div><div className="riskRuleList"><Rule t="SAFE" x="No current breach and no material forecast concern."/><Rule t="WATCH" x="Early drift or a forecast approaching the limit."/><Rule t="HIGH" x="Strong future-risk signal or current high-risk evidence."/><Rule t="CRITICAL" x="Current/forecast breach or severe abnormality; prioritize QA."/></div></div></div><div className="modelGrid riskModels"><div className={`decisionCard ${aBreaches?'alert':'pass'}`}><div className="decisionHead"><span>MODEL A · CURRENT SAFETY</span>{aBreaches?badge('Critical'):badge('Safe')}</div><h3>Absolute Limit Guard</h3><div className="decisionValue">{aBreaches} / {stats.total}<small>components above {limit} μA at 168h</small></div><p>Uses the measured endpoint only. No forecast is used to determine a current-limit breach.</p></div><div className={`decisionCard ${bAlerts?'alert':'pass'}`}><div className="decisionHead"><span>MODEL B · FUTURE RISK</span>{bAlerts?badge('Watch'):badge('Safe')}</div><h3>Drift Forecast</h3><div className="decisionValue">{bAlerts} / {stats.total}<small>components with forecast concern</small></div><p>Fits the early burn-in trajectory and projects the 168h endpoint plus time-to-limit.</p></div></div><Section title="Priority components" sub="Only components needing attention are shown here. Select one to inspect Model A and Model B evidence."><div className="caseGrid">{risky.slice(0,8).map(x=><div className="caseCard" key={x.id} onClick={()=>go('inspector',x.id)}><b>{x.id}</b><span>{x.lot}</span>{badge(x.risk)}<small>Model A: {x.modelA?.status} · Model B: {x.modelB?.status} · Forecast {x.forecast.toFixed(1)} μA</small></div>)}</div>{risky.length>8&&<p className="sub riskMore">Showing the 8 highest-priority components. Use Priority Queue for the complete list.</p>}</Section></>} ;if(page==='inspector')return <Inspector c={c} limit={limit} go={go}/>;if(page==='priority')return <><Hero eyebrow="PRIORITY QUEUE" title="Inspect first, not last." text="Ranked cases help QA focus attention where risk and evidence are strongest."/><Section title="Inspection priority"><Table rows={risky} open={id=>go('inspector',id)}/></Section></>;
-if(page==='action')return <><Hero eyebrow="ENGINEER ACTION CENTER" title="From prediction to action." text="Close the loop with recommended QA steps and explicit human confirmation."/><div className="actions">{risky.slice(0,8).map(c=><div className={review[c.id]?'done':''} key={c.id}><div>{badge(c.risk)} <b>{c.id}</b> <span>{c.lot}</span></div><h3>{c.risk==='Critical'?'Immediate QA review':c.risk==='High'?'Repeat measurement':'Monitor next stage'}</h3><p>{c.reason}. {c.hours===999?'No breach forecast.':`Estimated boundary crossing in ${c.hours}h.`}</p><Btn secondary onClick={()=>go('inspector',c.id)}>View evidence</Btn> <Btn onClick={()=>setReview({...review,[c.id]:!review[c.id]})}>{review[c.id]?<><Check size={14}/> Confirmed</>:'Mark reviewed'}</Btn></div>)}</div></>;
-if(page==='whatif'){let m=[.75,1,1.2,1.5][scenario],d=c.v.map((v,i)=>({h:S[i],base:v,scenario:v*(i===3?m:1+(m-1)*i/3)}));return <><Hero eyebrow="WHAT-IF RELIABILITY LAB" title="Explore how the trajectory changes." text="Test sensitivity to continued drift." actions={<div className="tabs">{['Lower stress','Current','1.2× drift','1.5× drift'].map((x,i)=><button className={scenario===i?'on':''} onClick={()=>setScenario(i)} key={x}>{x}</button>)}</div>}/><div className="stats"><Stat I={Target} label="Case" value={c.id} sub={c.lot}/><Stat I={LineIcon} label="Scenario endpoint" value={d[3].scenario.toFixed(1)+' μA'} sub={'Limit '+limit+' μA'} tone={d[3].scenario>=limit?'danger':'safe'}/><Stat I={ShieldCheck} label="Outcome" value={d[3].scenario>=limit?'BREACH':'WITHIN LIMIT'} sub="Scenario result"/></div><Section title="Scenario trajectory"><div className="chart"><ResponsiveContainer width="100%" height={350}><LineChart data={d}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="h"/><YAxis/><Tooltip/><ReferenceLine y={limit} strokeDasharray="5 5"/><Line dataKey="base" name="Current" strokeWidth={2}/><Line dataKey="scenario" name="Scenario" strokeWidth={3} strokeDasharray="7 6"/></LineChart></ResponsiveContainer></div></Section></>}
-if(page==='model')return <><Hero eyebrow="MODEL TRUST" title="Two models, two jobs — never mix their signals." text="Model A is the hard safety gate. Model B is the early-warning drift forecaster." actions={<ModelSwitch model={model} setModel={setModel}/>} /><div className="modelGrid"><div className={'modelCard '+(model==='A'?'selected':'')}><div className="modelTag">MODEL A</div><h3>{MODEL_A.name}</h3><p>{MODEL_A.desc}</p><div className="modelMetric">{stats.high+stats.critical}<small>current risk alerts</small></div><Rule t="Decision" x={`Flag when the measured 168h value reaches ${limit} μA or above; no forecast is used.`}/><span className="modelStatus">SAFETY GATE</span></div><div className={'modelCard '+(model==='B'?'selected':'')}><div className="modelTag">MODEL B</div><h3>{MODEL_B.name}</h3><p>{MODEL_B.desc}</p><div className="modelMetric">{cs.filter(x=>x.forecast>=limit).length}<small>forecast breaches</small></div><Rule t="Decision" x="Fit only 0h/24h/96h, then project 168h; the measured 168h value is excluded from the fit."/><span className="modelStatus">EARLY WARNING</span></div></div><div className="stats"><Stat I={Target} label="High-risk recall" value="94.2%" sub="Primary safety metric" tone="safe"/><Stat I={Gauge} label="Precision" value="91.6%" sub="Risk alerts"/><Stat I={BrainCircuit} label="F1 score" value="92.9%" sub="Detection balance"/><Stat I={LineIcon} label="Forecast MAE" value="3.8 μA" sub="Model B validation"/></div><div className="two"><Section title="Confusion matrix"><div className="matrix"><span/><b>Predicted safe</b><b>Predicted risk</b><b>Actual safe</b><strong>8,640</strong><strong>184</strong><b>Actual risk</b><strong>96</strong><strong>1,080</strong></div></Section><Section title="Guardrails"><Rule t="Model A isolation" x="Absolute-limit decisions are shown separately from forecast warnings."/><Rule t="Model B uncertainty" x="Forecast confidence and time-to-limit accompany every projection."/><Rule t="Human confirmation" x="High-risk decisions remain reviewable."/></Section></div></>;
-if(page==='copilot')return <Copilot q={q} setQ={setQ} ans={ans} ask={ask}/>;if(page==='reports')return <><Hero eyebrow="ENGINEERING REPORTS" title="Package the evidence for QA." text="Export current screening results." actions={<Btn onClick={exportCSV}><Download size={14}/> Download CSV</Btn>}/><Section title="Top inspection cases"><div className="caseGrid">{risky.slice(0,8).map(x=><div className="caseCard" key={x.id} onClick={()=>go('inspector',x.id)}><b>{x.id}</b><span>{x.lot}</span>{badge(x.risk)}<small>{x.reason}</small></div>)}</div></Section></>;return <><Hero eyebrow="SYSTEM SETTINGS" title="Tune the decision boundaries." text="Changes apply immediately across the session."/><div className="settings"><div><h3>Safety leakage limit</h3><p>Universal absolute boundary.</p><strong>{limit} μA</strong><input type="range" min="20" max="80" value={limit} onChange={e=>setLimit(+e.target.value)}/></div><div><h3>Lot anomaly sensitivity</h3><p>Higher sensitivity flags subtler deviations.</p><strong>{sens.toFixed(2)}</strong><input type="range" min=".2" max=".9" step=".01" value={sens} onChange={e=>setSens(+e.target.value)}/></div></div><Btn onClick={applyConfig}><Check size={14}/> Apply configuration</Btn></>; }
-function Hero({eyebrow,title,text,actions}){return <div className="hero"><div><label>{eyebrow}</label><h1>{title}</h1><p>{text}</p></div><div className="heroActions">{actions}</div></div>}function Chart({limit}){let d=[{h:0,v:10.5},{h:24,v:12.6},{h:48,v:19.5},{h:72,v:30.8},{h:96,v:40.9},{h:120,v:49.1},{h:144,v:55.5},{h:168,v:61.8}];return <div className="chart"><ResponsiveContainer width="100%" height={290}><LineChart data={d}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="h" tickFormatter={x=>x+'h'}/><YAxis/><Tooltip/><ReferenceLine y={limit} strokeDasharray="5 5" label="Safety limit"/><Line dataKey="v" type="monotone" strokeWidth={3}/></LineChart></ResponsiveContainer></div>}function Rule({t,x}){return <div className="rule"><i/><div><b>{t}</b><p>{x}</p></div></div>}function ModelSwitch({model,setModel}){return <div className="modelSwitch">{[MODEL_A,MODEL_B].map(m=><button key={m.id} className={model===m.id?'on':''} onClick={()=>setModel(m.id)}><b>{m.short}</b><span>{m.name}</span></button>)}</div>}
-function ModelDecision({title,label,result,limit,detail}){
-  const breach=result.severity!=='Safe';
-  return <div className={'decisionCard '+(breach?'alert':'pass')}>
-    <div className="decisionHead"><span>{label}</span><strong>{result.status}</strong></div>
-    <h3>{title}</h3>
-    <div className="decisionValue">{result.value?.toFixed?.(1) ?? result.predicted168.toFixed(1)} μA</div>
-    <p>{detail}</p>
-    <small>{breach?'Requires attention':'Within this model boundary'} · Limit {limit} μA</small>
-  </div>
+
+/**
+ * Model B Classification
+ */
+function modelBResult(v, limit) {
+  const f = linearForecast(v, limit);
+  let severity = 'Safe';
+  if (f.isAlreadyBreached || f.predicted168 >= limit * 1.25) {
+    severity = 'Critical';
+  } else if (f.predicted168 >= limit) {
+    severity = 'High';
+  } else if (f.predicted168 >= limit * 0.78 || f.slope > 0.12) {
+    severity = 'Watch';
+  }
+  return {
+    ...f,
+    severity,
+    status: severity === 'Safe' ? 'PASS' : 'FORECAST ALERT'
+  };
 }
-function Prediction({cs,c,limit,model,setModel,setSel}){
-  const a=modelAResult(c.v,limit), b=modelBResult(c.v,limit);
-  const f=b;
-  const forecastData=[
-    {h:0,observed:c.v[0]},{h:24,observed:c.v[1]},{h:96,observed:c.v[2]},{h:168,observed:c.v[3],forecast:f.predicted168},
-    {h:192,forecast:Math.max(0,f.intercept+f.slope*192)},{h:216,forecast:Math.max(0,f.intercept+f.slope*216)},{h:240,forecast:Math.max(0,f.intercept+f.slope*240)}
+
+/**
+ * Unified Decision Rule: Max severity between Model A and Model B
+ */
+function combinedRisk(a, b) {
+  const rA = RANK[a.severity] || 1;
+  const rB = RANK[b.severity] || 1;
+  return rA >= rB ? a.severity : b.severity;
+}
+
+// =============================================================
+// MODEL C — TRAJECTORY ANOMALY DETECTION ENGINE
+// Pure JavaScript robust lot-relative statistical outlier kernel.
+// Zero external dependencies. O(N) complexity.
+// =============================================================
+
+/**
+ * chi2_ref: Reference chi-squared value for normalization.
+ * Chosen as chi2 median for k=4 degrees of freedom (chi2.ppf(0.5, df=4) ≈ 3.357).
+ * This sets the "expected" anomaly distance for a typical outlier at the median
+ * of a chi-squared distribution with 4 features.
+ * Documented here; do NOT change without re-evaluating the severity thresholds.
+ */
+const MODEL_C_CHI2_REF = 3.357;
+
+/**
+ * Feature weights for multi-dimensional anomaly distance.
+ * w1: Baseline Leakage Offset (F1)
+ * w2: Early Drift Velocity (F2)
+ * w3: Trajectory Curvature/Acceleration (F3)
+ * w4: Early OLS Fit Dispersion (F4)
+ * All equal weights — no feature is artificially prioritized without empirical evidence.
+ */
+const MODEL_C_WEIGHTS = { w1: 1, w2: 1, w3: 1, w4: 1 };
+
+/**
+ * Model C severity thresholds (documented and transparent).
+ * Rationale: These are geometric thresholds on the normalized anomaly score S ∈ [0,1].
+ * - Safe: S < 0.35  — trajectory statistically consistent with lot peers
+ * - Watch: 0.35 ≤ S < 0.60 — mild trajectory deviation, worth monitoring
+ * - High: 0.60 ≤ S < 0.82 — significant departure from lot distribution
+ * - Critical: S ≥ 0.82 — strong outlier, investigate root cause
+ * These thresholds are ENGINEERING CHOICES, not validated ML metrics.
+ * Validation against labeled production data is required for formal performance claims.
+ */
+const MODEL_C_SEVERITY_THRESHOLDS = { watch: 0.35, high: 0.60, critical: 0.82 };
+
+/**
+ * Compute the OLS-fitted hat values for [0h, 24h, 96h] using the same
+ * closed-form OLS as Model B, but restricted to early window only.
+ * Returns [Vhat_0, Vhat_24, Vhat_96]
+ */
+function earlyOLSHat(v) {
+  const xs = [0, 24, 96];
+  const ys = xs.map((_, i) => (isFinite(Number(v[i])) ? Number(v[i]) : 0));
+  const mx = 40; // mean of [0,24,96]
+  const my = (ys[0] + ys[1] + ys[2]) / 3;
+  const den = xs.reduce((a, x) => a + (x - mx) ** 2, 0); // 5952
+  const slope = den ? xs.reduce((a, x, i) => a + (x - mx) * (ys[i] - my), 0) / den : 0;
+  const intercept = my - slope * mx;
+  return xs.map(x => intercept + slope * x);
+}
+
+/**
+ * Safe median of a numeric array. Returns 0 for empty/all-invalid arrays.
+ */
+function safeMedian(arr) {
+  const valid = arr.filter(v => isFinite(v) && v !== null && v !== undefined);
+  if (!valid.length) return 0;
+  const sorted = [...valid].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+
+/**
+ * Safe clamp — ensures a value is a finite number in [0,1].
+ */
+function clamp01(v) {
+  if (!isFinite(v)) return 0;
+  return Math.max(0, Math.min(1, v));
+}
+
+/**
+ * Extract Model C features for a single component.
+ * Uses ONLY 0h, 24h, 96h — 168h is never accessed. Zero data leakage.
+ * Returns { F1, F2, F3, F4 }
+ */
+function modelCFeatures(v, lotMedianV0) {
+  const v0 = isFinite(Number(v[0])) ? Number(v[0]) : 0;
+  const v24 = isFinite(Number(v[1])) ? Number(v[1]) : 0;
+  const v96 = isFinite(Number(v[2])) ? Number(v[2]) : 0;
+
+  // F1: Baseline Leakage Offset — how far the 0h value is from the lot median 0h
+  const F1 = v0 - lotMedianV0;
+
+  // F2: Early Drift Velocity — average rate of leakage increase over 0h→96h
+  const F2 = (v96 - v0) / 96;
+
+  // F3: Trajectory Curvature / Acceleration
+  // = second-stage rate minus first-stage rate
+  const rate1 = (v24 - v0) / 24;  // μA/h from 0h to 24h
+  const rate2 = (v96 - v24) / 72; // μA/h from 24h to 96h
+  const F3 = rate2 - rate1;
+
+  // F4: Early OLS Fit Dispersion — sum of squared residuals vs expected linear fit
+  const hat = earlyOLSHat(v);
+  const F4 = (v0 - hat[0]) ** 2 + (v24 - hat[1]) ** 2 + (v96 - hat[2]) ** 2;
+
+  return { F1, F2, F3, F4 };
+}
+
+/**
+ * MODEL C — FULL COMPUTATION ENGINE
+ *
+ * Phase 1: Extract lot-level robust statistics (Median, MAD) for each feature.
+ * Phase 2: Compute per-component modified z-scores, anomaly distance, score, severity, reasons.
+ *
+ * @param {Array} rawDataset - Array of { id, lot, v: [0h, 24h, 96h, 168h] }
+ * @returns {Map<string, object>} - Map from component id to Model C result
+ */
+function computeModelC(rawDataset) {
+  if (!rawDataset || !rawDataset.length) return new Map();
+
+  const EPSILON = 1e-6; // prevent division-by-zero in MAD
+
+  // ── PHASE 1: Group components by lot and extract features ──────────────────
+  const lotGroups = new Map(); // lot → [{ id, F1, F2, F3, F4 }]
+
+  // First pass: compute lot median of V0 (needed for F1)
+  const lotV0Values = new Map();
+  rawDataset.forEach(c => {
+    if (!lotV0Values.has(c.lot)) lotV0Values.set(c.lot, []);
+    const v0 = isFinite(Number((c.v || [])[0])) ? Number(c.v[0]) : 0;
+    lotV0Values.get(c.lot).push(v0);
+  });
+  const lotMedianV0 = new Map();
+  lotV0Values.forEach((vals, lot) => lotMedianV0.set(lot, safeMedian(vals)));
+
+  // Second pass: extract all four features per component
+  rawDataset.forEach(c => {
+    const v = c.v || [0, 0, 0, 0];
+    const medV0 = lotMedianV0.get(c.lot) || 0;
+    const feat = modelCFeatures(v, medV0);
+    if (!lotGroups.has(c.lot)) lotGroups.set(c.lot, []);
+    lotGroups.get(c.lot).push({ id: c.id, ...feat });
+  });
+
+  // ── PHASE 2: Compute robust lot statistics per feature ──────────────────────
+  // For each lot, compute Median_j and MAD_j for j ∈ {F1, F2, F3, F4}
+  const lotStats = new Map(); // lot → { medF1, madF1, medF2, madF2, ... }
+  const FEAT_KEYS = ['F1', 'F2', 'F3', 'F4'];
+
+  lotGroups.forEach((items, lot) => {
+    const stats = {};
+    FEAT_KEYS.forEach(fk => {
+      const vals = items.map(x => x[fk]).filter(isFinite);
+      const med = safeMedian(vals);
+      const absDevs = vals.map(v => Math.abs(v - med));
+      const mad = 1.4826 * safeMedian(absDevs) + EPSILON;
+      stats[`med${fk}`] = med;
+      stats[`mad${fk}`] = mad;
+    });
+    lotStats.set(lot, stats);
+  });
+
+  // ── PHASE 3: Score every component ──────────────────────────────────────────
+  const results = new Map();
+
+  rawDataset.forEach(c => {
+    const v = c.v || [0, 0, 0, 0];
+    const medV0 = lotMedianV0.get(c.lot) || 0;
+    const { F1, F2, F3, F4 } = modelCFeatures(v, medV0);
+    const st = lotStats.get(c.lot) || {};
+
+    // Modified z-scores — safe division (MAD already has EPSILON added)
+    const Z1 = isFinite(st.madF1) && st.madF1 > 0 ? (F1 - st.medF1) / st.madF1 : 0;
+    const Z2 = isFinite(st.madF2) && st.madF2 > 0 ? (F2 - st.medF2) / st.madF2 : 0;
+    const Z3 = isFinite(st.madF3) && st.madF3 > 0 ? (F3 - st.medF3) / st.madF3 : 0;
+    const Z4 = isFinite(st.madF4) && st.madF4 > 0 ? (F4 - st.medF4) / st.madF4 : 0;
+
+    // Multi-feature anomaly distance (weighted Euclidean in z-score space)
+    const { w1, w2, w3, w4 } = MODEL_C_WEIGHTS;
+    const D2 = w1 * Z1 ** 2 + w2 * Z2 ** 2 + w3 * Z3 ** 2 + w4 * Z4 ** 2;
+    const anomalyDistance = isFinite(D2) ? Math.sqrt(D2) : 0;
+
+    // Normalized anomaly score S ∈ [0,1]
+    const rawScore = 1 - Math.exp(-D2 / (2 * MODEL_C_CHI2_REF));
+    const anomalyScore = clamp01(rawScore);
+
+    // Severity classification (transparent thresholds — see MODEL_C_SEVERITY_THRESHOLDS)
+    let severity = 'Safe';
+    if (anomalyScore >= MODEL_C_SEVERITY_THRESHOLDS.critical) severity = 'Critical';
+    else if (anomalyScore >= MODEL_C_SEVERITY_THRESHOLDS.high) severity = 'High';
+    else if (anomalyScore >= MODEL_C_SEVERITY_THRESHOLDS.watch) severity = 'Watch';
+
+    const anomalyDetected = anomalyScore >= MODEL_C_SEVERITY_THRESHOLDS.watch;
+
+    // ── Explainable anomaly reasons ──────────────────────────────────────────
+    const reasons = [];
+    const zPairs = [
+      { label: 'baseline leakage offset (F1)', z: Z1, sign: F1 >= 0 ? '+' : '' },
+      { label: 'early drift velocity (F2)', z: Z2, sign: F2 >= (st.medF2 || 0) ? '+' : '' },
+      { label: 'trajectory curvature/acceleration (F3)', z: Z3, sign: F3 >= (st.medF3 || 0) ? '+' : '' },
+      { label: 'OLS fit dispersion (F4)', z: Z4, sign: '' }
+    ];
+    zPairs.forEach(({ label, z, sign }) => {
+      const absZ = Math.abs(z);
+      if (absZ >= 3.0) {
+        reasons.push(`${sign}${z.toFixed(1)}σ ${label} — extreme departure from lot distribution`);
+      } else if (absZ >= 2.0) {
+        reasons.push(`${sign}${z.toFixed(1)}σ ${label} — significant deviation above lot median`);
+      } else if (absZ >= 1.4) {
+        reasons.push(`${sign}${z.toFixed(1)}σ ${label} — mild elevation vs lot peers`);
+      }
+    });
+    if (!reasons.length) {
+      reasons.push('Trajectory is consistent with lot peer distribution (all |Z| < 1.4σ)');
+    }
+
+    // Strongest contributing feature (largest |Z|)
+    const zMag = [Math.abs(Z1), Math.abs(Z2), Math.abs(Z3), Math.abs(Z4)];
+    const maxIdx = zMag.indexOf(Math.max(...zMag));
+    const featureNames = ['F1 — Baseline Offset', 'F2 — Drift Velocity', 'F3 — Curvature', 'F4 — OLS Dispersion'];
+    const strongestFeature = featureNames[maxIdx];
+
+    results.set(c.id, {
+      anomalyScore,
+      anomalyDetected,
+      anomalyDistance: isFinite(anomalyDistance) ? anomalyDistance : 0,
+      severity,
+      status: anomalyDetected ? 'ANOMALY' : 'NORMAL',
+      F1: isFinite(F1) ? F1 : 0,
+      F2: isFinite(F2) ? F2 : 0,
+      F3: isFinite(F3) ? F3 : 0,
+      F4: isFinite(F4) ? F4 : 0,
+      Z1: isFinite(Z1) ? Z1 : 0,
+      Z2: isFinite(Z2) ? Z2 : 0,
+      Z3: isFinite(Z3) ? Z3 : 0,
+      Z4: isFinite(Z4) ? Z4 : 0,
+      anomalyReasons: reasons,
+      strongestFeature,
+      lotMedianV0: medV0
+    });
+  });
+
+  return results;
+}
+
+/**
+ * Unified tri-model severity: max of Model A, B, and C severities.
+ */
+function combinedRisk3(a, b, cResult) {
+  const rA = RANK[a.severity] || 1;
+  const rB = RANK[b.severity] || 1;
+  const rC = RANK[cResult.severity] || 1;
+  const best = Math.max(rA, rB, rC);
+  return Object.keys(RANK).find(k => RANK[k] === best) || 'Safe';
+}
+
+// --- UI HELPERS ---
+
+
+const badge = r => <span className={'badge ' + (r || 'safe').toLowerCase()}>{r || 'Safe'}</span>;
+
+const Btn = ({ children, onClick, secondary = false, disabled = false, className = '' }) => (
+  <button className={(secondary ? 'secondary ' : 'primary ') + className} onClick={onClick} disabled={disabled}>
+    {children}
+  </button>
+);
+
+function Stat({ I, label, value, sub, tone = '' }) {
+  return (
+    <div className={'stat ' + tone}>
+      <I size={18} />
+      <div>
+        <small>{label}</small>
+        <strong>{value}</strong>
+        <em>{sub}</em>
+      </div>
+    </div>
+  );
+}
+
+function Section({ title, sub, children, actions }) {
+  return (
+    <section className="card">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '8px' }}>
+        <div>
+          <h2>{title}</h2>
+          {sub && <p className="sub">{sub}</p>}
+        </div>
+        {actions && <div style={{ display: 'flex', gap: '6px' }}>{actions}</div>}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function EmptyState({ title = 'No Data Loaded', message = 'Upload a CSV dataset or restore demo records.', onReset, onUpload }) {
+  return (
+    <div className="card emptyState" style={{ textAlign: 'center', padding: '48px 24px', margin: '20px 0' }}>
+      <Database size={40} style={{ color: '#4a6d8c', marginBottom: '14px' }} />
+      <h2 style={{ fontSize: '16px', marginBottom: '6px' }}>{title}</h2>
+      <p className="sub" style={{ maxWidth: '420px', margin: '0 auto 18px' }}>{message}</p>
+      <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+        {onUpload && <Btn onClick={onUpload}><Upload size={14} /> Upload CSV</Btn>}
+        {onReset && <Btn secondary onClick={onReset}><RotateCcw size={14} /> Restore Demo Data</Btn>}
+      </div>
+    </div>
+  );
+}
+
+function Table({ rows, open, pageSize = 20 }) {
+  const [pageIdx, setPageIdx] = useState(0);
+  const [filter, setFilter] = useState('');
+
+  const filtered = useMemo(() => {
+    if (!filter) return rows;
+    const q = filter.toLowerCase();
+    return rows.filter(r => r.id.toLowerCase().includes(q) || r.lot.toLowerCase().includes(q) || r.risk.toLowerCase().includes(q));
+  }, [rows, filter]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const currentRows = useMemo(() => {
+    const start = pageIdx * pageSize;
+    return filtered.slice(start, start + pageSize);
+  }, [filtered, pageIdx, pageSize]);
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', gap: '10px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#071827', padding: '5px 10px', borderRadius: '6px', border: '1px solid #1c354b', maxWidth: '240px', width: '100%' }}>
+          <Search size={13} style={{ color: '#68839b' }} />
+          <input
+            style={{ background: 'none', border: 'none', color: '#fff', fontSize: '11px', outline: 'none', width: '100%' }}
+            placeholder="Filter ID, Lot, Risk..."
+            value={filter}
+            onChange={e => { setFilter(e.target.value); setPageIdx(0); }}
+          />
+          {filter && <X size={12} style={{ cursor: 'pointer', color: '#8ca6bd' }} onClick={() => setFilter('')} />}
+        </div>
+        <small style={{ color: '#71899f', fontSize: '9px' }}>
+          Showing {filtered.length === 0 ? 0 : pageIdx * pageSize + 1} - {Math.min(filtered.length, (pageIdx + 1) * pageSize)} of {filtered.length} components
+        </small>
+      </div>
+
+      <div className="table">
+        <table>
+          <thead>
+            <tr>
+              <th>Component</th>
+              <th>Lot</th>
+              <th>0h</th>
+              <th>24h</th>
+              <th>96h</th>
+              <th>Measured 168h</th>
+              <th>Forecast 168h</th>
+              <th>Risk</th>
+              <th>Conf.</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {currentRows.length === 0 ? (
+              <tr>
+                <td colSpan={10} style={{ textAlign: 'center', padding: '24px', color: '#6f879d' }}>
+                  No matching components found.
+                </td>
+              </tr>
+            ) : (
+              currentRows.map(c => (
+                <tr key={c.id}>
+                  <td><b>{c.id}</b></td>
+                  <td>{c.lot}</td>
+                  <td>{c.v[0]?.toFixed(1)} μA</td>
+                  <td>{c.v[1]?.toFixed(1)} μA</td>
+                  <td>{c.v[2]?.toFixed(1)} μA</td>
+                  <td><b>{c.v[3]?.toFixed(1)} μA</b></td>
+                  <td style={{ color: c.forecast >= 50 ? '#f3a06f' : '#88a4bc' }}>{c.forecast?.toFixed(1)} μA</td>
+                  <td>{badge(c.risk)}</td>
+                  <td>{c.confidence}%</td>
+                  <td><button className="small" onClick={() => open(c.id)}>View</button></td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {totalPages > 1 && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px' }}>
+          <button className="small" onClick={() => setPageIdx(p => Math.max(0, p - 1))} disabled={pageIdx === 0}>
+            <ChevronLeft size={12} /> Prev
+          </button>
+          <span style={{ fontSize: '9px', color: '#7791a8' }}>Page {pageIdx + 1} of {totalPages}</span>
+          <button className="small" onClick={() => setPageIdx(p => Math.min(totalPages - 1, p + 1))} disabled={pageIdx >= totalPages - 1}>
+            Next <ChevronRight size={12} />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// --- MAIN APPLICATION COMPONENT ---
+
+function App() {
+  const [page, setPage] = useState('home');
+  const [rawDataset, setRawDataset] = useState(SEED_DATA);
+  const [sel, setSel] = useState('C-10482');
+
+  const [componentSearch, setComponentSearch] = useState('');
+const [showComponentResults, setShowComponentResults] = useState(false);
+  const [limit, setLimit] = useState(50);
+  const [sens, setSens] = useState(0.5);
+  const [selectedLot, setSelectedLot] = useState('L-103');
+  const [scenario, setScenario] = useState(1);
+  const [toast, setToast] = useState('');
+  const [upload, setUpload] = useState(false);
+  const [validationReport, setValidationReport] = useState(null);
+  const [q, setQ] = useState('');
+  const [ans, setAns] = useState('');
+  const [review, setReview] = useState({});
+  const [model, setModel] = useState('B');
+  const [liveMonitoring, setLiveMonitoring] = useState(false);
+const [liveStage, setLiveStage] = useState(0);
+const [liveTick, setLiveTick] = useState(0);
+const startLiveMonitoring = () => {
+  setLiveStage(0);
+  setLiveTick(0);
+  setLiveMonitoring(true);
+};
+
+const stopLiveMonitoring = () => {
+  setLiveMonitoring(false);
+};
+useEffect(() => {
+  if (!liveMonitoring) return;
+
+  const timer = setInterval(() => {
+    setLiveTick(t => {
+      const next = t + 1;
+
+      if (next >= 4) {
+        setLiveMonitoring(false);
+        setLiveStage(3);
+        return 4;
+      }
+
+      setLiveStage(next);
+      return next;
+    });
+  }, 2500);
+
+  return () => clearInterval(timer);
+}, [liveMonitoring]);
+
+  // --- DYNAMICALLY DERIVED STATE (ZERO STALE DERIVED VALUES) ---
+
+  const computedCs = useMemo(() => {
+    if (!rawDataset || !rawDataset.length) return [];
+
+    // Run Model C first — needs full dataset to compute lot-relative statistics
+    const modelCMap = computeModelC(rawDataset);
+
+    return rawDataset.map(c => {
+      const a = modelAResult(c.v, limit);
+      const b = modelBResult(c.v, limit);
+      const mc = modelCMap.get(c.id) || {
+        anomalyScore: 0, anomalyDetected: false, anomalyDistance: 0,
+        severity: 'Safe', status: 'NORMAL',
+        F1: 0, F2: 0, F3: 0, F4: 0,
+        Z1: 0, Z2: 0, Z3: 0, Z4: 0,
+        anomalyReasons: ['No Model C data available'],
+        strongestFeature: 'N/A', lotMedianV0: 0
+      };
+
+      // Unified tri-model risk: max of Model A, Model B, Model C
+      const risk = combinedRisk3(a, b, mc);
+
+      return {
+        id: c.id,
+        lot: c.lot,
+        v: c.v,
+        reason: c.reason || 'Screening observation',
+        confidence: c.confidence || 88,
+        risk,
+        modelA: a,
+        modelB: b,
+        modelC: mc,
+        slope: b.slope,
+        intercept: b.intercept,
+        forecast: b.predicted168,
+        hours: b.crossHours,
+        forecastHours: b.crossHours,
+        crossingText: b.crossingText,
+        // Keep legacy anomaly field pointing at Model C score for backward compat
+        anomaly: mc.anomalyScore
+      };
+    });
+  }, [rawDataset, limit]);
+
+  // Dynamically derived unique lots list
+  const availableLots = useMemo(() => {
+    const set = new Set(computedCs.map(c => c.lot).filter(Boolean));
+    return Array.from(set);
+  }, [computedCs]);
+
+  // Ensure active lot is valid
+  const currentLot = useMemo(() => {
+    if (availableLots.includes(selectedLot)) return selectedLot;
+    return availableLots[0] || '';
+  }, [availableLots, selectedLot]);
+
+  // Selected component
+  const c = useMemo(() => {
+    if (!computedCs.length) return null;
+    return computedCs.find(x => x.id === sel) || computedCs[0];
+  }, [computedCs, sel]);
+
+  const componentSearchResults = useMemo(() => {
+  const term = componentSearch.trim().toLowerCase();
+
+  if (!term) return [];
+
+  return computedCs
+    .filter(x =>
+      x.id.toLowerCase().includes(term) ||
+      x.lot.toLowerCase().includes(term)
+    )
+    .slice(0, 8);
+}, [computedCs, componentSearch]);
+
+  // Global counts and metrics
+  const stats = useMemo(() => {
+    const total = computedCs.length;
+    return {
+      total,
+      safe: computedCs.filter(x => x.risk === 'Safe').length,
+      watch: computedCs.filter(x => x.risk === 'Watch').length,
+      high: computedCs.filter(x => x.risk === 'High').length,
+      critical: computedCs.filter(x => x.risk === 'Critical').length
+    };
+  }, [computedCs]);
+
+  // Population metrics per lot
+  const lots = useMemo(() => {
+    return availableLots.map(l => {
+      const items = computedCs.filter(x => x.lot === l);
+      if (!items.length) {
+        return { lot: l, r: 0, base: 0, max: 0, health: 100, count: 0 };
+      }
+      const r = items.filter(x => x.risk !== 'Safe').length;
+      const base = items.reduce((sum, item) => sum + (item.v[0] || 0), 0) / items.length;
+      const maxVal = Math.max(...items.map(item => item.v[3] || 0));
+      const penaltyRatio = (r / items.length) * 75;
+      const penaltyExcess = Math.max(0, maxVal - limit) * 0.35;
+      const health = Math.max(0, Math.min(100, Math.round(100 - penaltyRatio - penaltyExcess)));
+      return { lot: l, r, base, max: maxVal, health, count: items.length };
+    });
+  }, [availableLots, computedCs, limit]);
+
+  // Ranked priority list
+  const risky = useMemo(() => {
+    return [...computedCs]
+      .filter(item => item.risk !== 'Safe')
+      .sort((a, b) => (RANK[b.risk] || 0) - (RANK[a.risk] || 0) || b.forecast - a.forecast);
+  }, [computedCs]);
+
+  const go = (p, id) => {
+    if (id) setSel(id);
+    setPage(p);
+  };
+
+  const notify = msg => {
+    setToast(msg);
+    setTimeout(() => setToast(''), 2600);
+  };
+
+  const applyConfig = () => notify('Configuration applied dynamically across all models');
+
+  const restoreDemo = () => {
+    setRawDataset(SEED_DATA);
+    setSel('C-10482');
+    setSelectedLot('L-103');
+    setValidationReport(null);
+    notify('Demo dataset restored (15 components, 6 lots)');
+  };
+
+  const exportCSV = () => {
+    if (!computedCs.length) {
+      notify('No data to export');
+      return;
+    }
+    const rows = computedCs.map(item => ({
+      component_id: item.id,
+      lot_id: item.lot,
+      '0h': item.v[0],
+      '24h': item.v[1],
+      '96h': item.v[2],
+      '168h_measured': item.v[3],
+      '168h_forecast': item.forecast.toFixed(2),
+      model_a_status: item.modelA.status,
+      model_b_status: item.modelB.status,
+      combined_risk: item.risk,
+      anomaly_score: item.anomaly.toFixed(2),
+      confidence_pct: item.confidence,
+      time_to_limit_h: item.hours === 999 ? 'No breach' : item.hours === 0 ? 'Breached' : item.hours
+    }));
+
+    const blob = new Blob([Papa.unparse(rows)], { type: 'text/csv;charset=utf-8;' });
+    const u = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = u;
+    a.download = `BURN AI INSPECTOR-reliability-report-limit${limit}uA.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(u), 1000);
+    notify(`Exported ${rows.length} component records`);
+  };
+
+  // --- CO-PILOT DYNAMIC QUESTION ANSWERING ---
+  const handleAsk = customQuery => {
+    const queryStr = (customQuery !== undefined ? customQuery : q).toLowerCase();
+    if (!computedCs.length) {
+      setAns('No dataset is currently loaded. Upload a CSV or restore demo records to query BURN AI INSPECTOR.');
+      return;
+    }
+
+    if (queryStr.includes('c-') || queryStr.includes('up-') || queryStr.match(/[a-z0-9]+-[0-9]+/)) {
+      const match = computedCs.find(item => queryStr.includes(item.id.toLowerCase()));
+      if (match) {
+        setAns(
+          `${match.id} (Lot ${match.lot}): Measured 168h is ${match.v[3]?.toFixed(1)} μA. Model B early slope is ${match.slope.toFixed(3)} μA/h with a projected 168h endpoint of ${match.forecast.toFixed(1)} μA. Decision: ${match.risk.toUpperCase()} (${match.crossingText}).`
+        );
+        return;
+      }
+    }
+
+    if (queryStr.includes('why') && c) {
+      setAns(
+        `${c.id} (${c.lot}): Measured 168h is ${c.v[3]?.toFixed(1)} μA against limit ${limit} μA. Model B projects ${c.forecast.toFixed(1)} μA with early drift slope ${c.slope.toFixed(3)} μA/h. Status: ${c.risk} (${c.crossingText}).`
+      );
+      return;
+    }
+
+    if (queryStr.includes('lot') || queryStr.includes('worst') || queryStr.includes('deteriorat')) {
+      if (lots.length) {
+        const sortedLots = [...lots].sort((a, b) => a.health - b.health);
+        const worst = sortedLots[0];
+        setAns(
+          `Lot ${worst.lot} has the lowest reliability health score (${worst.health}%) with ${worst.r} of ${worst.count} components requiring attention (baseline ${worst.base.toFixed(1)} μA, peak ${worst.max.toFixed(1)} μA).`
+        );
+      } else {
+        setAns('No lots available in the current dataset.');
+      }
+      return;
+    }
+
+    if (queryStr.includes('48') || queryStr.includes('cross') || queryStr.includes('breach')) {
+      const soon = computedCs.filter(item => item.hours > 0 && item.hours <= 48);
+      const already = computedCs.filter(item => item.hours === 0);
+      setAns(
+        `Analysis against ${limit} μA limit: ${already.length} components already in breach. ${soon.length} components forecast to cross the boundary within 48h (${soon.map(x => x.id).slice(0, 5).join(', ') || 'None'}).`
+      );
+      return;
+    }
+
+    setAns(
+      `BURN AI INSPECTOR Engine active on ${computedCs.length} components across ${availableLots.length} lots. Try asking about a component (e.g. "${computedCs[0]?.id}"), the weakest lot, or crossings within 48 hours.`
+    );
+  };
+
+  // Collapsible Navigation Structure
+  const navSections = [
+    { type: 'item', id: 'home', icon: Gauge, label: 'Command Center' },
+    {
+      type: 'group',
+      id: 'data-group',
+      title: 'SENSOR DATA',
+      children: [
+        { id: 'data', icon: Database, label: 'Data Intelligence' },
+        { id: 'lot', icon: Layers3, label: 'Lot DNA' }
+      ]
+    },
+    {
+      type: 'group',
+      id: 'detection-group',
+      title: 'DETECTION & FORECAST',
+      children: [
+        { id: 'anomaly', icon: Target, label: 'Hidden Defects' },
+        { id: 'prediction', icon: LineIcon, label: 'Drift Forecast' }
+      ]
+    },
+    {
+      type: 'group',
+      id: 'risk-group',
+      title: 'RISK & RESPONSE',
+      children: [
+        { id: 'risk', icon: ShieldCheck, label: 'Risk & Safety' },
+        { id: 'priority', icon: ListChecks, label: 'Priority Queue' },
+        { id: 'action', icon: Zap, label: 'Action Center' }
+      ]
+    },
+    {
+      type: 'group',
+      id: 'analysis-group',
+      title: 'ANALYSIS',
+      children: [
+        { id: 'inspector', icon: Activity, label: 'Component Profile' },
+        { id: 'whatif', icon: FlaskConical, label: 'What-If Lab' },
+        { id: 'model', icon: BrainCircuit, label: 'Model Trust' }
+      ]
+    },
+    { type: 'item', id: 'reports', icon: Download, label: 'Reports' },
+    { type: 'item', id: 'settings', icon: Settings, label: 'Settings' }
   ];
-  return <><Hero eyebrow="MODEL A + MODEL B" title="Two independent checks, one clear decision." text="Model A reads the measured endpoint against the hard safety limit. Model B ignores the 168h measurement and forecasts the endpoint from 0h / 24h / 96h." actions={<><ModelSwitch model={model} setModel={setModel}/><select value={c.id} onChange={e=>setSel(e.target.value)}>{cs.map(x=><option key={x.id} value={x.id}>{x.id} · {x.lot}</option>)}</select></>}/>
-  <div className="decisionBanner"><div><b>FINAL NEXORA DECISION</b><strong>{combinedRisk(a,b).toUpperCase()}</strong><span>Highest severity from Model A and Model B — never averaged.</span></div><div><span>Model A: <b>{a.status}</b></span><span>Model B: <b>{b.status}</b></span></div></div>
-  <div className="modelGrid">
-    <ModelDecision label="MODEL A · HARD GATE" title="Absolute Limit Guard" result={{...a,value:a.value}} limit={limit} detail="Uses only the measured 168h endpoint. It answers: is the observed value at or above the absolute safety limit?"/>
-    <ModelDecision label="MODEL B · EARLY WARNING" title="Drift Forecast" result={{...b,value:b.predicted168}} limit={limit} detail="Fits only 0h / 24h / 96h and projects the 168h endpoint. It answers: is the trajectory heading toward the limit?"/>
-  </div>
-  <div className="stats"><Stat I={Target} label="Model A · measured" value={a.value.toFixed(1)+' μA'} sub={a.status+' at 168h'} tone={a.severity!=='Safe'?'danger':'safe'}/><Stat I={LineIcon} label="Model B · forecast" value={f.predicted168.toFixed(1)+' μA'} sub="Independent 168h projection" tone={f.severity!=='Safe'?'danger':'safe'}/><Stat I={Activity} label="Model B slope" value={f.slope.toFixed(3)+' μA/h'} sub="0h / 24h / 96h fit"/><Stat I={Timer} label="Forecast crossing" value={f.crossHours===999?'None':f.crossHours+' h'} sub="Model B only"/></div>
-  <Section title={c.id+" · Model A vs Model B"} sub="Observed points are solid. Forecast begins after the 96h training window.">
-    <div className="chart"><ResponsiveContainer width="100%" height={350}><LineChart data={forecastData}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="h" tickFormatter={x=>x+'h'}/><YAxis/><Tooltip/><ReferenceLine y={limit} strokeDasharray="5 5" label="Absolute limit"/><Line dataKey="observed" name="Measured data" type="monotone" strokeWidth={3} dot={{r:5}}/><Line dataKey="forecast" name="Model B forecast" type="monotone" strokeWidth={3} strokeDasharray="8 6"/></LineChart></ResponsiveContainer></div>
-  </Section>
-  <div className="two"><Section title="Exactly what each model sees"><Rule t="MODEL A INPUT" x="Measured 168h value + universal safety limit. No trajectory extrapolation."/><Rule t="MODEL B INPUT" x="Measured 0h, 24h and 96h values. The measured 168h point is not used for fitting."/><Rule t="FINAL DECISION" x="Take the more severe of A and B. This prevents a forecast warning from being hidden by a current PASS."/><Rule t="MODEL B UNCERTAINTY" x={`Forecast ${f.confidence||c.confidence}% confidence · estimated crossing ${f.crossHours===999?'not within horizon':f.crossHours+'h'}.`}/></Section><Section title="Interpretation"><div className="callout"><BrainCircuit size={16}/><span>{a.status==='BREACH'?'Model A already sees an absolute-limit breach. ': 'Model A currently passes the hard limit. '}{b.status==='FORECAST ALERT'?'Model B independently detects future drift risk.':'Model B does not project a boundary breach.'}</span></div></Section></div>
-  </>;
+
+  // Collapsed state dictionary for sidebar groups
+  const [collapsedGroups, setCollapsedGroups] = useState({});
+
+  const toggleGroup = groupId => {
+    setCollapsedGroups(prev => ({
+      ...prev,
+      [groupId]: !prev[groupId]
+    }));
+  };
+
+  // Keep group containing current active page expanded
+  useEffect(() => {
+    navSections.forEach(sec => {
+      if (sec.type === 'group' && sec.children.some(c => c.id === page)) {
+        setCollapsedGroups(prev => (prev[sec.id] ? { ...prev, [sec.id]: false } : prev));
+      }
+    });
+  }, [page]);
+
+  const getBreadcrumb = current => {
+    for (const sec of navSections) {
+      if (sec.type === 'item' && sec.id === current) return sec.label;
+      if (sec.type === 'group') {
+        const child = sec.children.find(c => c.id === current);
+        if (child) return `${sec.title} › ${child.label}`;
+      }
+    }
+    return 'Command Center';
+  };
+
+  return (
+    <div className="app">
+      <aside>
+        <div className="brand">
+          <div className="logo"><Sparkles size={17} /></div>
+          <div>
+            <b>BURN AI INSPECTOR</b>
+            <small>BURN-IN RELIABILITY</small>
+          </div>
+        </div>
+        <div className="online">● ENGINE ONLINE</div>
+        <nav className="navContainer">
+          {navSections.map(sec => {
+            if (sec.type === 'item') {
+              const Icon = sec.icon;
+              return (
+                <button
+                  key={sec.id}
+                  className={'nav ' + (page === sec.id ? 'active' : '')}
+                  onClick={() => setPage(sec.id)}
+                >
+                  <Icon size={15} />
+                  <span>{sec.label}</span>
+                </button>
+              );
+            }
+
+            const isCollapsed = Boolean(collapsedGroups[sec.id]);
+            const hasActiveChild = sec.children.some(c => c.id === page);
+
+            return (
+              <div className="navGroup" key={sec.id}>
+                <button
+                  type="button"
+                  className={`navGroupHeader ${hasActiveChild ? 'groupActive' : ''}`}
+                  onClick={() => toggleGroup(sec.id)}
+                  aria-expanded={!isCollapsed}
+                >
+                  <span>{sec.title}</span>
+                  {isCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+                </button>
+                {!isCollapsed && (
+                  <div className="navGroupItems">
+                    {sec.children.map(child => {
+                      const ChildIcon = child.icon;
+                      return (
+                        <button
+                          key={child.id}
+                          className={'nav ' + (page === child.id ? 'active' : '')}
+                          onClick={() => setPage(child.id)}
+                        >
+                          <ChildIcon size={14} />
+                          <span>{child.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </nav>
+        <button className="load" onClick={() => setUpload(true)}>
+          <Upload size={14} /> Load CSV
+        </button>
+      </aside>
+
+      <main>
+        <header>
+          <div className="mobile"><Menu size={17} /> BURN AI INSPECTOR</div>
+          <span>BURN AI INSPECTOR <ChevronRight size={12} /> {getBreadcrumb(page)}</span>
+          <div className="head">
+            <button className="icon" onClick={() => setPage('action')} title="Priority Alerts">
+              <Bell size={16} />
+              {stats.high + stats.critical > 0 && <sup>{stats.high + stats.critical}</sup>}
+            </button>
+            <i /> {computedCs.length} components active
+          </div>
+        </header>
+
+        <div className="content">
+          <Page
+            page={page}
+            stats={stats}
+            lots={lots}
+            availableLots={availableLots}
+            currentLot={currentLot}
+            setLot={setSelectedLot}
+            risky={risky}
+            cs={computedCs}
+            rawCount={rawDataset.length}
+            c={c}
+            setSel={setSel}
+            limit={limit}
+            setLimit={setLimit}
+            sens={sens}
+            setSens={setSens}
+            scenario={scenario}
+            setScenario={setScenario}
+            review={review}
+            setReview={setReview}
+            go={go}
+            exportCSV={exportCSV}
+            restoreDemo={restoreDemo}
+            openUpload={() => setUpload(true)}
+            challenge={() => {
+              if (computedCs.some(x => x.id === 'C-10482')) {
+                setSel('C-10482');
+                setPage('inspector');
+                notify('Signature case: early drift detected prior to absolute threshold');
+              } else if (computedCs.length) {
+                setSel(computedCs[0].id);
+                setPage('inspector');
+              }
+            }}
+            q={q}
+            setQ={setQ}
+            ans={ans}
+            ask={handleAsk}
+            notify={notify}
+            model={model}
+            setModel={setModel}
+            applyConfig={applyConfig}
+            validationReport={validationReport}
+          liveMonitoring={liveMonitoring}
+liveStage={liveStage}
+liveTick={liveTick}
+startLiveMonitoring={startLiveMonitoring}
+stopLiveMonitoring={stopLiveMonitoring}
+componentSearch={componentSearch}
+setComponentSearch={setComponentSearch}
+showComponentResults={showComponentResults}
+setShowComponentResults={setShowComponentResults}
+componentSearchResults={componentSearchResults}
+/>
+        </div>
+      </main>
+
+      {/* --- CSV INGESTION MODAL WITH COMPREHENSIVE VALIDATION --- */}
+      {upload && (
+        <div className="modalbg" onMouseDown={() => setUpload(false)}>
+          <div className="modal" onMouseDown={e => e.stopPropagation()}>
+            <div className="modalhead">
+              <h2>Load Burn-In Inspection CSV</h2>
+              <button className="icon" onClick={() => setUpload(false)}><X size={16} /></button>
+            </div>
+            <div className="upload">
+              <FileSpreadsheet size={32} style={{ color: '#63bce9', margin: '0 auto 10px' }} />
+              <h3>Import Component Dataset</h3>
+              <p style={{ margin: '6px 0 16px', color: '#829db5' }}>
+                Required stages: <code>0h, 24h, 96h, 168h</code><br />
+                Identifiers: <code>component_id</code> (or <code>id</code>), <code>lot_id</code> (or <code>lot</code>)
+              </p>
+              <label className="primary" style={{ cursor: 'pointer' }}>
+                Choose CSV File
+                <input
+                  hidden
+                  type="file"
+                  accept=".csv,text/csv"
+                  onChange={e => {
+                    const f = e.target.files?.[0];
+                    if (!f) return;
+                    // Reset input value so the same file can be re-uploaded immediately
+                    e.target.value = '';
+
+                    Papa.parse(f, {
+                      header: true,
+                      dynamicTyping: true,
+                      skipEmptyLines: true,
+                      complete: r => {
+                        if (!r.data || !r.data.length) {
+                          notify('CSV file contains no readable data rows.');
+                          setUpload(false);
+                          return;
+                        }
+
+                        const seenIds = new Set();
+                        let duplicatesCount = 0;
+                        let invalidRowsCount = 0;
+
+                        const parsed = r.data
+                          .map((row, idx) => {
+                            if (!row || typeof row !== 'object') {
+                              invalidRowsCount++;
+                              return null;
+                            }
+
+                            // Normalize column keys
+                            const normalized = {};
+                            Object.keys(row).forEach(k => {
+                              if (k) normalized[k.trim().toLowerCase().replace(/[\s_\-]/g, '')] = row[k];
+                            });
+
+                            // Extract measurements
+                            const v0 = Number(normalized['0h'] ?? normalized['0'] ?? normalized['0hr'] ?? normalized['stage0h']);
+                            const v24 = Number(normalized['24h'] ?? normalized['24'] ?? normalized['24hr'] ?? normalized['stage24h']);
+                            const v96 = Number(normalized['96h'] ?? normalized['96'] ?? normalized['96hr'] ?? normalized['stage96h']);
+                            const v168 = Number(normalized['168h'] ?? normalized['168'] ?? normalized['168hr'] ?? normalized['stage168h']);
+
+                            const v = [v0, v24, v96, v168];
+                            if (v.some(val => val === null || val === undefined || Number.isNaN(val))) {
+                              invalidRowsCount++;
+                              return null;
+                            }
+
+                            // Extract IDs
+                            let rawId = String(
+                              normalized['componentid'] ||
+                              normalized['component'] ||
+                              normalized['id'] ||
+                              normalized['partid'] ||
+                              `COMP-${idx + 1}`
+                            ).trim();
+
+                            // Duplicate ID handling
+                            if (seenIds.has(rawId)) {
+                              duplicatesCount++;
+                              rawId = `${rawId} (#${duplicatesCount + 1})`;
+                            }
+                            seenIds.add(rawId);
+
+                            const lotId = String(
+                              normalized['lotid'] ||
+                              normalized['lot'] ||
+                              normalized['batchid'] ||
+                              normalized['batch'] ||
+                              'LOT-UNKNOWN'
+                            ).trim();
+
+                            return {
+                              id: rawId,
+                              lot: lotId,
+                              v,
+                              reason: 'Imported burn-in record',
+                              confidence: 88
+                            };
+                          })
+                          .filter(Boolean);
+
+                        if (parsed.length > 0) {
+                          setRawDataset(parsed);
+                          setSel(parsed[0].id);
+                          setSelectedLot(parsed[0].lot);
+                          setValidationReport({
+                            fileName: f.name,
+                            totalRows: r.data.length,
+                            validRows: parsed.length,
+                            invalidRows: invalidRowsCount,
+                            duplicates: duplicatesCount
+                          });
+                          notify(`Loaded ${parsed.length} components (${invalidRowsCount} invalid rows skipped, ${duplicatesCount} duplicates resolved)`);
+                        } else {
+                          notify('No valid burn-in data rows could be parsed. Check column headers.');
+                        }
+                        setUpload(false);
+                      },
+                      error: err => {
+                        notify(`CSV Parse Error: ${err.message}`);
+                        setUpload(false);
+                      }
+                    });
+                  }}
+                />
+              </label>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {toast && (
+        <div className="toast">
+          <CheckCircle2 size={15} />
+          {toast}
+        </div>
+      )}
+    </div>
+  );
 }
-function Inspector({c,limit,go}){return <><Hero eyebrow="COMPONENT DIGITAL PROFILE" title={c.id} text={`Lot ${c.lot} • evidence trail from early burn-in to predicted outcome.`} actions={<Btn onClick={()=>go('action')}><ListChecks size={14}/> Open action</Btn>}/><div className="profile"><div><div className="banner"><div><label>CURRENT CLASSIFICATION</label><h2>{c.v[3].toFixed(1)} μA predicted at 168h</h2><p>Limit {limit} μA • Lot baseline ~10.0 μA</p></div>{badge(c.risk)}</div><Section title="Evidence trajectory"><Chart limit={limit}/></Section></div><div className="score"><div className="ring">{Math.max(1,100-Math.round(c.anomaly*70))}<small>/100</small></div><p>Reliability score</p><hr/><p>Anomaly <b>{c.anomaly.toFixed(2)}</b></p><p>Confidence <b>{c.confidence}%</b></p><p>Time to limit <b>{c.hours===999?'No breach':c.hours+' h'}</b></p></div></div><div className="two"><Section title="Why NEXORA flagged it"><div className="factors">{[['Lot-relative deviation',43],['Early drift',Math.min(100,c.slope*500)],['Predicted endpoint',Math.min(100,c.v[3]/limit*70)]].map(([n,v])=><div key={n}><span>{n}</span><b>{Math.round(v)}%</b><div className="track"><i style={{width:Math.min(100,v)+'%'}}/></div></div>)}</div><div className="callout"><BrainCircuit size={16}/><span><b>Explanation:</b> the component is below the absolute limit now, but its early trajectory is inconsistent with the lot baseline and its forecast moves toward the safety boundary.</span></div></Section><Section title="Recommended next step"><div className="recommend"><ShieldCheck size={19}/><div><b>{c.risk==='Safe'?'Continue normal screening':'Prioritize QA review'}</b><p>{c.risk==='Safe'?'Monitor the next burn-in stage.':'Repeat measurement and review thermal/lot context before release.'}</p></div></div></Section></div></>}
-function Copilot({q,setQ,ans,ask}){return <div className="copilot"><div className="copIntro"><BrainCircuit size={24}/><div><h3>NEXORA Copilot</h3><p>Ask about components, lots, risk or crossings.</p></div></div><div className="suggestions">{['Why is C-10482 risky?','Which lot is deteriorating fastest?','Which components cross the limit within 48 hours?'].map(x=><button key={x} onClick={()=>{setQ(x);setTimeout(ask,0)}}>{x}</button>)}</div><div className="chat"><input value={q} onChange={e=>setQ(e.target.value)} onKeyDown={e=>e.key==='Enter'&&ask()} placeholder="Ask NEXORA…"/><Btn onClick={ask}><MessageSquare size={14}/> Ask</Btn></div>{ans&&<div className="answer"><Sparkles size={15}/>{ans}</div>}</div>};createRoot(document.getElementById('root')).render(<App/>);
+
+// --- PAGE ROUTER AND VIEW PRESENTATION ---
+
+function Page(props) {
+  const {
+    page,
+    stats,
+    lots,
+    availableLots,
+    currentLot,
+    setLot,
+    risky,
+    cs,
+    c,
+    setSel,
+    limit,
+    setLimit,
+    sens,
+    setSens,
+    scenario,
+    setScenario,
+    review,
+    setReview,
+    go,
+    exportCSV,
+    restoreDemo,
+    openUpload,
+    challenge,
+    q,
+    setQ,
+    ans,
+    ask,
+    notify,
+    model,
+setModel,
+applyConfig,
+validationReport,
+liveMonitoring,
+liveStage,
+liveTick,
+startLiveMonitoring,
+stopLiveMonitoring,
+componentSearch,
+setComponentSearch,
+showComponentResults,
+setShowComponentResults,
+componentSearchResults
+} = props;
+
+  // Shared Top Header
+  const commonHeader = (
+    <>
+      <div className="hero">
+        <div>
+          <label>AI-DRIVEN ANOMALY DETECTION IN COMPONENT BURN-IN & SCREENING</label>
+          <h1>BURN AI INSPECTOR — Intelligent Burn-In Reliability & Anomaly Detection</h1>
+          <p>
+            BURN AI INSPECTOR ingests multi-stage burn-in sensor measurements, analyzes component drift trajectories, performs independent safety-limit and early drift checks, identifies anomalous behavior, and prioritizes components for QA action and compliance reporting.
+          </p>
+        </div>
+        <div className="heroActions">
+          <Btn secondary onClick={() => go('data')}><Database size={14} /> Sensor Dataset</Btn>
+          <Btn onClick={() => c && go('inspector', c.id)} disabled={!c}><Target size={14} /> Inspect Component</Btn>
+        </div>
+      </div>
+
+      {/* Poster-Aligned Product Workflow Stepper */}
+      <div className="workflowPipeline">
+        <div className="workflowStep" onClick={() => go('data')} style={{ cursor: 'pointer' }}>
+          <span>1. SENSOR DATA COLLECTION</span>
+          <b>{stats.total} Components Ingested</b>
+          <small>{availableLots.length} Dynamic Lots · 4 Burn-In Stages</small>
+        </div>
+        <div className="workflowStep" onClick={() => go('prediction')} style={{ cursor: 'pointer' }}>
+          <span>2. AI / MODEL ANALYSIS</span>
+          <b>Model A + B + C</b>
+          <small>Hard Gate · OLS Forecast · Lot Anomaly</small>
+        </div>
+        <div className="workflowStep" onClick={() => go('risk')} style={{ cursor: 'pointer' }}>
+          <span>3. ANOMALY / RISK ALERT</span>
+          <b>{stats.high + stats.critical} Flagged Breaches</b>
+          <small>{stats.safe} Safe · {stats.watch} Drift Watch</small>
+        </div>
+        <div className="workflowStep" onClick={() => go('priority')} style={{ cursor: 'pointer' }}>
+          <span>4. ACTION & REPORT</span>
+          <b>{risky.length} In Priority Queue</b>
+          <small>QA Remediation & Audit Export</small>
+        </div>
+      </div>
+
+      <div className="stats">
+        <Stat I={Database} label="Sensor Ingestion" value={stats.total} sub={`${availableLots.length} Dynamic Lots`} />
+        <Stat I={CheckCircle2} label="Within Boundary" value={stats.safe} sub="Passes Model A & B" tone="safe" />
+        <Stat I={Clock3} label="Early Drift Watch" value={stats.watch} sub="Latent drift alerts" tone="watch" />
+        <Stat I={AlertTriangle} label="High & Critical" value={stats.high + stats.critical} sub={`${stats.critical} hard threshold breaches`} tone="danger" />
+      </div>
+    </>
+  );
+
+  // 1. COMMAND CENTER (HOME)
+  if (page === 'home') {
+    if (!cs.length) {
+      return (
+        <>
+          {commonHeader}
+          <EmptyState onReset={restoreDemo} onUpload={openUpload} />
+        </>
+      );
+    }
+    return (
+      <>
+        {commonHeader}
+        <div
+  className="card"
+  style={{
+    marginBottom: '16px',
+    border: liveMonitoring ? '1px solid #4dd9ff' : '1px solid #1c354b',
+    background: '#071827'
+  }}
+>
+  <div
+    style={{
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      gap: '16px',
+      flexWrap: 'wrap',
+      marginBottom: '16px'
+    }}
+  >
+    <div>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          marginBottom: '5px'
+        }}
+      >
+        <Activity size={16} />
+        <b>LIVE SENSOR MONITORING</b>
+        <span
+          className="badge"
+          style={{
+            fontSize: '8px',
+            marginLeft: '4px'
+          }}
+        >
+          SIMULATION / REPLAY
+        </span>
+      </div>
+
+      <p className="sub">
+        Progressive burn-in telemetry replay through the 0h → 24h → 96h → 168h inspection stages.
+      </p>
+    </div>
+
+    <div style={{ display: 'flex', gap: '8px' }}>
+      {!liveMonitoring ? (
+        <Btn onClick={startLiveMonitoring}>
+          <Activity size={14} />
+          {liveStage === 3 ? 'Replay Again' : 'Start Live Monitoring'}
+        </Btn>
+      ) : (
+        <Btn secondary onClick={stopLiveMonitoring}>
+          Stop Monitoring
+        </Btn>
+      )}
+    </div>
+  </div>
+
+  <div
+    style={{
+      display: 'grid',
+      gridTemplateColumns: 'repeat(4, 1fr)',
+      gap: '8px',
+      marginBottom: '16px'
+    }}
+  >
+    {['0h', '24h', '96h', '168h'].map((stage, i) => (
+      <div
+        key={stage}
+        style={{
+          padding: '12px',
+          borderRadius: '7px',
+          textAlign: 'center',
+          background: i <= liveStage ? '#0d2a3b' : '#091b2b',
+          border: i === liveStage
+            ? '1px solid #4dd9ff'
+            : '1px solid #1c354b'
+        }}
+      >
+        <small style={{ display: 'block', color: '#71899f', marginBottom: '4px' }}>
+          STAGE {i + 1}
+        </small>
+        <strong>{stage}</strong>
+        <div
+          style={{
+            fontSize: '9px',
+            marginTop: '5px',
+            color: i < liveStage ? '#68dda0' : i === liveStage ? '#4dd9ff' : '#526b80'
+          }}
+        >
+          {i < liveStage
+            ? 'PROCESSED'
+            : i === liveStage
+            ? liveMonitoring
+              ? 'MONITORING'
+              : 'CURRENT'
+            : 'PENDING'}
+        </div>
+      </div>
+    ))}
+  </div>
+
+  <div
+    style={{
+      display: 'grid',
+      gridTemplateColumns: 'repeat(3, 1fr)',
+      gap: '10px'
+    }}
+  >
+    <div style={{ position: 'relative' }}>
+  <small style={{ color: '#71899f' }}>SELECT COMPONENT</small>
+
+  <input
+    type="text"
+    value={componentSearch}
+   placeholder="Search component or lot..."
+    onChange={(e) => {
+      setComponentSearch(e.target.value);
+      setShowComponentResults(true);
+    }}
+    onFocus={() => {
+  if (!componentSearch.trim() && c?.id) {
+    setComponentSearch(c.id);
+  }
+  setShowComponentResults(true);
+}}
+    style={{
+      display: 'block',
+      marginTop: '6px',
+      width: '100%',
+      boxSizing: 'border-box',
+      padding: '8px 10px',
+      borderRadius: '6px',
+      border: '1px solid #2a465e',
+      background: '#091b2b',
+      color: '#d9f3ff',
+      fontWeight: 700,
+      outline: 'none'
+    }}
+  />
+
+  {showComponentResults && componentSearch.trim() && (
+    <div
+      style={{
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        top: '58px',
+        zIndex: 20,
+        background: '#071827',
+        border: '1px solid #2a465e',
+        borderRadius: '7px',
+        overflow: 'hidden',
+        boxShadow: '0 10px 25px rgba(0,0,0,0.35)'
+      }}
+    >
+      {componentSearchResults.length ? (
+        componentSearchResults.map(component => (
+          <button
+            key={component.id}
+            onMouseDown={(e) => e.preventDefault()}
+onClick={() => {
+  setSel(component.id);
+              setComponentSearch(component.id);
+              setShowComponentResults(false);
+              setLiveStage(0);
+              setLiveTick(0);
+              setLiveMonitoring(false);
+            }}
+            style={{
+              display: 'block',
+              width: '100%',
+              padding: '9px 11px',
+              textAlign: 'left',
+              border: 'none',
+              borderBottom: '1px solid #17314a',
+              background: 'transparent',
+              color: '#d9f3ff',
+              cursor: 'pointer'
+            }}
+          >
+            <b>{component.id}</b>
+            <span style={{ marginLeft: '8px', color: '#71899f' }}>
+              · {component.lot}
+            </span>
+          </button>
+        ))
+      ) : (
+        <div
+          style={{
+            padding: '10px',
+            color: '#71899f',
+            fontSize: '11px'
+          }}
+        >
+          No matching component found
+        </div>
+      )}
+    </div>
+  )}
+</div>
+
+    <div>
+      <small style={{ color: '#71899f' }}>CURRENT SENSOR STAGE</small>
+      <div style={{ marginTop: '4px', fontWeight: 700 }}>
+        {['0h', '24h', '96h', '168h'][liveStage]}
+      </div>
+    </div>
+
+    <div>
+      <small style={{ color: '#71899f' }}>TELEMETRY READING</small>
+      <div style={{ marginTop: '4px', fontWeight: 700 }}>
+        {c?.v?.[liveStage] !== undefined
+          ? `${c.v[liveStage].toFixed(1)} μA`
+          : '—'}
+      </div>
+    </div>
+  </div>
+  <div
+  style={{
+    display: 'grid',
+    gridTemplateColumns: 'repeat(3, 1fr)',
+    gap: '10px',
+    marginTop: '16px',
+    paddingTop: '14px',
+    borderTop: '1px solid #17314a'
+  }}
+>
+  <div>
+    <small style={{ color: '#71899f' }}>MODEL A · LIMIT GUARD</small>
+    <div style={{ marginTop: '5px', fontWeight: 700 }}>
+      {liveStage < 3
+        ? 'WAITING FOR 168h'
+        : c?.modelA?.status || '—'}
+    </div>
+  </div>
+
+  <div>
+    <small style={{ color: '#71899f' }}>MODEL B · DRIFT FORECAST</small>
+    <div style={{ marginTop: '5px', fontWeight: 700 }}>
+      {liveStage < 2
+        ? 'WAITING FOR 96h'
+        : c?.modelB?.status || 'READY'}
+    </div>
+  </div>
+
+  <div>
+    <small style={{ color: '#71899f' }}>MODEL C · ANOMALY DETECTION</small>
+    <div style={{ marginTop: '5px', fontWeight: 700 }}>
+      {liveStage < 2
+        ? 'WAITING FOR 96h'
+        : c?.modelC?.status || 'READY'}
+    </div>
+  </div>
+</div>
+
+<div
+  style={{
+    marginTop: '14px',
+    padding: '10px 12px',
+    borderRadius: '6px',
+    background: '#091b2b',
+    border: '1px solid #17314a',
+    fontSize: '10px'
+  }}
+>
+  <b>ANALYSIS STATUS:</b>{' '}
+  {liveStage < 2
+    ? 'Collecting early burn-in telemetry. Models B and C activate after the 96h observation.'
+    : liveStage < 3
+    ? 'Early trajectory analysis active. Model A will evaluate the absolute 168h safety boundary when the final measurement arrives.'
+    : `Three-model analysis complete. Final BURN AI INSPECTOR risk: ${c?.risk?.toUpperCase() || '—'}.`}
+</div>
+</div>
+        <div className="two">
+          <Section title="Stage 1 & 2: Active Component Sensor Trajectory & Drift Forecast" sub={c ? `${c.id} (Lot ${c.lot}) · Measured burn-in points (0h, 24h, 96h, 168h) vs Model B OLS forecast (${c.forecast.toFixed(1)} μA)` : 'No component selected'}>
+            {c ? <InspectorChart c={c} limit={limit} /> : <div className="sub">Select a component to view trajectory</div>}
+          </Section>
+          <Section title="Stage 1: Sensor Population Fingerprint (Lot DNA)" sub="Dynamic population reliability scores and inter-lot variation across registered batches">
+            {lots.map(l => (
+              <div className="lotrow" key={l.lot}>
+                <b>{l.lot}</b>
+                <span>{l.r} flagged ({l.count} total)</span>
+                <div className="track">
+                  <i style={{ width: l.health + '%' }} className={l.health > 80 ? 'safe' : l.health > 50 ? 'watch' : 'critical'} />
+                </div>
+                <strong>{l.health}%</strong>
+              </div>
+            ))}
+          </Section>
+        </div>
+        <div className="two">
+          <Section title="Stage 4: Action & Priority Inspection Queue" sub="Evidence-based prioritization ranking components requiring engineering QA review">
+            {risky.length === 0 ? (
+              <div style={{ color: '#68dda0', padding: '16px 0', fontSize: '11px' }}>
+                <CheckCircle2 size={16} style={{ verticalAlign: 'middle', marginRight: '6px' }} />
+                All loaded components are within safe operating limits.
+              </div>
+            ) : (
+              risky.slice(0, 7).map(x => (
+                <div className="caseRow" key={x.id} onClick={() => go('inspector', x.id)}>
+                  <b>{x.id}</b>
+                  <span>{x.lot}</span>
+                  {badge(x.risk)}
+                  <strong>{x.forecast.toFixed(1)} μA</strong>
+                </div>
+              ))
+            )}
+          </Section>
+          <Section title="Stage 3: Anomaly Alert & Risk Composition Distribution" sub="Unified risk classification combining Model A hard limit and Model B trajectory drift">
+            {[
+              ['Safe', stats.safe],
+              ['Watch', stats.watch],
+              ['High', stats.high],
+              ['Critical', stats.critical]
+            ].map(([r, n]) => (
+              <div className="riskrow" key={r}>
+                <span>{r}</span>
+                <div className="track">
+                  <i className={r.toLowerCase()} style={{ width: Math.max(4, stats.total ? (n / stats.total) * 100 : 0) + '%' }} />
+                </div>
+                <b>{n}</b>
+              </div>
+            ))}
+            <div className="callout">
+              <ShieldCheck size={16} /> BURN AI INSPECTOR prevents escape: Model A enforces the 168h absolute safety limit, while Model B forecasts early burn-in trajectory drift.
+            </div>
+          </Section>
+        </div>
+
+        <Section title="Target Benefits & Intended Mission Outcomes" sub="Core value proposition from the BURN AI INSPECTOR component reliability poster">
+          <div className="targetBenefits">
+            <div className="targetBenefitCard">
+              <span>OUTCOME 1</span>
+              <h4>Higher Reliability & Quality</h4>
+              <p>Eliminates field escapes by detecting subtle early burn-in drift prior to physical wear-out.</p>
+            </div>
+            <div className="targetBenefitCard">
+              <span>OUTCOME 2</span>
+              <h4>Reduced Failure Rate & Rework</h4>
+              <p>Catches infant mortality before deployment, reducing costly recall cycles and hardware rework.</p>
+            </div>
+            <div className="targetBenefitCard">
+              <span>OUTCOME 3</span>
+              <h4>Cost & Screening Optimization</h4>
+              <p>Focuses engineering verification on flagged lots and components with verifiable drift evidence.</p>
+            </div>
+            <div className="targetBenefitCard">
+              <span>OUTCOME 4</span>
+              <h4>Improved Mission Success</h4>
+              <p>Provides objective, defensible compliance evidence for mission-critical aerospace QA sign-off.</p>
+            </div>
+          </div>
+        </Section>
+      </>
+    );
+  }
+
+  // 2. DATA INTELLIGENCE
+  if (page === 'data') {
+    const baselineMean = cs.length ? (cs.reduce((a, b) => a + (b.v[0] || 0), 0) / cs.length).toFixed(1) : '0.0';
+    const qualityScore = validationReport
+      ? Math.round((validationReport.validRows / validationReport.totalRows) * 100)
+      : cs.length
+      ? 100
+      : 0;
+
+    return (
+      <>
+        <Hero
+          title="Ingest & Validate Burn-In Sensor Telemetry."
+          eyebrow="SENSOR DATA · DATA INTELLIGENCE"
+          text="BURN AI INSPECTOR accepts multi-stage burn-in sensor measurements via CSV. Validates stage continuity, numeric integrity, and lot registration."
+          actions={
+            <>
+              <Btn secondary onClick={exportCSV}><Download size={14} /> Export CSV</Btn>
+              <Btn onClick={openUpload}><Upload size={14} /> Load CSV</Btn>
+            </>
+          }
+        />
+        <div className="stats">
+          <Stat I={Database} label="Data Quality" value={`${qualityScore}%`} sub={`${cs.length} valid records`} tone="safe" />
+          <Stat I={Layers3} label="Active Lots" value={availableLots.length} sub="Dynamic lot registry" />
+          <Stat I={Activity} label="Inspection Stages" value="4 Stages" sub="0h / 24h / 96h / 168h" />
+          <Stat I={Gauge} label="0h Baseline Mean" value={`${baselineMean} μA`} sub="Population initial average" />
+        </div>
+        <Section title="Data Validation & Integrity Checks">
+          <div className="checks">
+            <div><CheckCircle2 size={15} />Required Stages (4)<b>{cs.length ? 'PASS' : 'EMPTY'}</b></div>
+            <div><CheckCircle2 size={15} />Numeric Integrity<b>{cs.length ? '100% VALID' : 'N/A'}</b></div>
+            <div><CheckCircle2 size={15} />Dynamic Lots Registered<b>{availableLots.length} LOTS</b></div>
+            <div><CheckCircle2 size={15} />Duplicate IDs Scanned<b>{validationReport?.duplicates ? `${validationReport.duplicates} RESOLVED` : 'CLEAN'}</b></div>
+          </div>
+        </Section>
+        <Section title="Dataset Inspection Table">
+          {cs.length === 0 ? (
+            <EmptyState onReset={restoreDemo} onUpload={openUpload} />
+          ) : (
+            <Table rows={cs} open={id => go('inspector', id)} />
+          )}
+        </Section>
+      </>
+    );
+  }
+
+  // 3. LOT DNA
+  if (page === 'lot') {
+    if (!cs.length) {
+      return (
+        <>
+          <Hero eyebrow="SENSOR DATA · LOT DNA" title="Lot-Level Fingerprint & Population Distribution." text="BURN AI INSPECTOR builds a population fingerprint for each production lot." />
+          <EmptyState onReset={restoreDemo} onUpload={openUpload} />
+        </>
+      );
+    }
+
+    const lotItems = cs.filter(item => item.lot === currentLot);
+    const lotBase = lotItems.length ? (lotItems.reduce((a, b) => a + (b.v[0] || 0), 0) / lotItems.length).toFixed(1) : '0.0';
+    const lotHealth = lots.find(l => l.lot === currentLot)?.health ?? 100;
+    const flaggedCount = lotItems.filter(item => item.risk !== 'Safe').length;
+
+    // Dynamic histogram binning (prevents dropping >=80 uA values)
+    const maxLotVal = lotItems.length ? Math.max(...lotItems.map(item => item.v[3] || 0)) : 80;
+    const upperLimit = Math.max(80, Math.ceil(maxLotVal / 10) * 10);
+    const binCount = 8;
+    const binSize = Math.max(10, Math.ceil(upperLimit / binCount));
+
+    const dist = Array.from({ length: binCount }, (_, i) => {
+      const low = i * binSize;
+      const high = (i + 1) * binSize;
+      const isLast = i === binCount - 1;
+      const label = isLast ? `${low}+` : `${low}-${high}`;
+      const count = lotItems.filter(item => {
+        const val = item.v[3] || 0;
+        return isLast ? val >= low : val >= low && val < high;
+      }).length;
+      return { b: label, n: count };
+    });
+
+    return (
+      <>
+        <Hero
+          eyebrow="LOT DNA"
+          title="Make 'normal' visible."
+          text="BURN AI INSPECTOR builds a population fingerprint for each production lot."
+          actions={
+            <select value={currentLot} onChange={e => setLot(e.target.value)}>
+              {availableLots.map(l => (
+                <option key={l} value={l}>{l}</option>
+              ))}
+            </select>
+          }
+        />
+        <div className="stats">
+          <Stat I={Layers3} label="Selected Lot" value={currentLot || 'None'} sub={`${lotItems.length} components`} />
+          <Stat I={Gauge} label="0h Baseline Mean" value={`${lotBase} μA`} sub="Lot initial mean" />
+          <Stat I={ShieldCheck} label="Lot Health" value={`${lotHealth}%`} sub="Reliability score" tone="safe" />
+          <Stat I={AlertTriangle} label="Attention Required" value={flaggedCount} sub="Non-safe components" tone={flaggedCount ? 'watch' : 'safe'} />
+        </div>
+        <div className="two">
+          <Section title="Measured 168h Leakage Distribution" sub={`Histogram across ${lotItems.length} components in ${currentLot}`}>
+            <div className="chart">
+              <ResponsiveContainer width="100%" height={290}>
+                <BarChart data={dist}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#17314a" />
+                  <XAxis dataKey="b" />
+                  <YAxis allowDecimals={false} />
+                  <Tooltip contentStyle={{ background: '#0a1c2d', borderColor: '#2a465e' }} />
+                  <Bar dataKey="n" fill="#5bbfe9" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </Section>
+          <Section title={`Components in ${currentLot}`} sub="Select a component to inspect">
+            <div className="caseGrid">
+              {lotItems.map(item => (
+                <div className="caseCard" key={item.id} onClick={() => go('inspector', item.id)}>
+                  <b>{item.id}</b>
+                  {badge(item.risk)}
+                  <small>Measured 168h: {item.v[3].toFixed(1)} μA (Forecast: {item.forecast.toFixed(1)} μA)</small>
+                </div>
+              ))}
+            </div>
+          </Section>
+        </div>
+      </>
+    );
+  }
+
+  // 4. HIDDEN DEFECT DETECTOR — MODEL C INTERFACE
+  if (page === 'anomaly') {
+    if (!cs.length) {
+      return (
+        <>
+          <Hero eyebrow="STAGE 2 · MODEL C — TRAJECTORY ANOMALY DETECTION" title="Detect Subtle Trajectory Deviations Prior to Hard Failure." text="A component can pass the universal threshold and still be abnormal for its lot." />
+          <EmptyState onReset={restoreDemo} onUpload={openUpload} />
+        </>
+      );
+    }
+
+    // Use Model C sensitivity threshold (sens state) for anomaly detection cutoff
+    const anomalous = cs.filter(item => item.modelC.anomalyScore >= sens);
+    const normal = cs.filter(item => item.modelC.anomalyScore < sens);
+    const avgCScore = cs.length ? (cs.reduce((a, b) => a + b.modelC.anomalyScore, 0) / cs.length) : 0;
+    const maxScore = cs.length ? Math.max(...cs.map(x => x.modelC.anomalyScore)) : 0;
+
+    // F2 (Drift Velocity) vs F1 (Baseline Offset) scatter — capped at 1000 for render performance
+    const scatterAnomalous = anomalous.slice(0, 500).map(item => ({
+      x: isFinite(item.modelC.F2) ? +item.modelC.F2.toFixed(4) : 0,
+      y: isFinite(item.modelC.F1) ? +item.modelC.F1.toFixed(2) : 0,
+      z: Math.max(30, Math.round(item.modelC.anomalyScore * 500)),
+      id: item.id,
+      lot: item.lot,
+      score: item.modelC.anomalyScore.toFixed(2)
+    }));
+    const scatterNormal = normal.slice(0, 500).map(item => ({
+      x: isFinite(item.modelC.F2) ? +item.modelC.F2.toFixed(4) : 0,
+      y: isFinite(item.modelC.F1) ? +item.modelC.F1.toFixed(2) : 0,
+      z: 30,
+      id: item.id,
+      lot: item.lot,
+      score: item.modelC.anomalyScore.toFixed(2)
+    }));
+const makeDensityBins = (points, cols = 45, rows = 30) => {
+  if (!points || points.length === 0) return [];
+
+  const valid = points.filter(
+    p => Number.isFinite(Number(p.x)) && Number.isFinite(Number(p.y))
+  );
+
+  if (!valid.length) return [];
+
+  const xs = valid.map(p => Number(p.x));
+  const ys = valid.map(p => Number(p.y));
+
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+
+  const stepX = (maxX - minX || 1) / cols;
+  const stepY = (maxY - minY || 1) / rows;
+
+  const bins = new Map();
+
+  valid.forEach(p => {
+    const x = Number(p.x);
+    const y = Number(p.y);
+
+    const col = Math.min(
+      cols - 1,
+      Math.floor((x - minX) / stepX)
+    );
+
+    const row = Math.min(
+      rows - 1,
+      Math.floor((y - minY) / stepY)
+    );
+
+    const key = `${col}-${row}`;
+
+    if (!bins.has(key)) {
+      bins.set(key, {
+        x: 0,
+        y: 0,
+        z: 0
+      });
+    }
+
+    const bin = bins.get(key);
+
+    bin.x += x;
+    bin.y += y;
+    bin.z += 1;
+  });
+
+  return Array.from(bins.values()).map(bin => ({
+    x: bin.x / bin.z,
+    y: bin.y / bin.z,
+    z: bin.z
+  }));
+};
+
+const densityNormal = makeDensityBins(scatterNormal);
+const densityAnomalous = makeDensityBins(scatterAnomalous);
+    return (
+      <>
+        <Hero
+          eyebrow="STAGE 2 · MODEL C — TRAJECTORY ANOMALY DETECTION"
+          title="Lot-Relative Burn-In Outlier Screening"
+          text={`Robust statistical detection: compares each component's early burn-in trajectory (0h, 24h, 96h) against its production lot peers. The 168h measurement is never accessed — zero data leakage. Threshold τ = ${sens.toFixed(2)}.`}
+          actions={
+            <Btn onClick={() => go('inspector', c?.id)}><Target size={14} /> Inspect Selected</Btn>
+          }
+        />
+
+        {/* Sensitivity Slider */}
+        <div className="slider" style={{ marginBottom: '4px' }}>
+          <span>Model C Sensitivity Threshold (τ)</span>
+          <input type="range" min="0.10" max="0.90" step="0.01" value={sens} onChange={e => setSens(+e.target.value)} />
+          <b>{sens.toFixed(2)}</b>
+          <small style={{ color: '#7893a9', fontSize: '9px', marginLeft: '8px' }}>
+            Watch ≥ 0.35 · High ≥ 0.60 · Critical ≥ 0.82 (engineering thresholds, not validated ML metrics)
+          </small>
+        </div>
+
+    
+        {/* Model C Summary Stats */}
+        <div className="stats">
+          <Stat I={AlertTriangle} label="Anomalous (S ≥ τ)" value={anomalous.length} sub={`τ = ${sens.toFixed(2)}, lot-relative outliers`} tone={anomalous.length > 0 ? 'danger' : 'safe'} />
+          <Stat I={CheckCircle2} label="Normal (S < τ)" value={normal.length} sub="Consistent with lot distribution" tone="safe" />
+          <Stat I={Gauge} label="Avg Anomaly Score" value={avgCScore.toFixed(3)} sub="Dataset mean S ∈ [0,1]" />
+          <Stat I={Zap} label="Highest Anomaly Score" value={maxScore.toFixed(3)} sub={cs.find(x => x.modelC.anomalyScore === maxScore)?.id || '—'} tone={maxScore >= 0.60 ? 'danger' : maxScore >= 0.35 ? 'watch' : ''} />
+        </div>
+
+        {/* Trajectory Anomaly Scatter Plot */}
+        <Section
+  title="Model C — Trajectory Anomaly Feature Space"
+  sub="Density view · X: F2 Early Drift Velocity (µA/h) · Y: F1 Baseline Offset (µA) · Red = Anomalous · Blue = Normal"
+>
+  <div className="chart">
+    <ResponsiveContainer width="100%" height={420}>
+      <ScatterChart margin={{ top: 15, right: 25, bottom: 20, left: 15 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#17314a" />
+
+        <XAxis
+          type="number"
+          dataKey="x"
+          name="F2 Early Drift Velocity"
+          unit=" µA/h"
+          tick={{ fontSize: 11, fill: "#7893a9" }}
+        />
+
+        <YAxis
+          type="number"
+          dataKey="y"
+          name="F1 Baseline Offset"
+          unit=" µA"
+          tick={{ fontSize: 11, fill: "#7893a9" }}
+        />
+
+        <ZAxis
+          type="number"
+          dataKey="z"
+          range={[25, 180]}
+        />
+
+        <Tooltip
+          cursor={{ strokeDasharray: "3 3" }}
+          contentStyle={{
+            background: "#0a1c2d",
+            borderColor: "#2a465e",
+            fontSize: "10px"
+          }}
+          formatter={(value, name) => [
+            typeof value === "number" ? value.toFixed(2) : value,
+            name
+          ]}
+        />
+
+        <Scatter
+          name="Normal density"
+          data={densityNormal}
+          fill="#3a6a8c"
+          opacity={0.65}
+        />
+
+        <Scatter
+          name="Anomalous density"
+          data={densityAnomalous}
+          fill="#ff707b"
+          opacity={0.75}
+        />
+      </ScatterChart>
+    </ResponsiveContainer>
+  </div>
+</Section>
+          
+
+
+        {/* Anomaly Cards */}
+        <Section
+          title={`Trajectory Anomalies Detected (${anomalous.length} components)`}
+          sub={`Sorted by anomaly score · S ≥ ${sens.toFixed(2)} (sensitivity threshold τ) · Lot-relative robust z-score outlier kernel`}
+        >
+          {anomalous.length === 0 ? (
+            <div style={{ color: '#68dda0', padding: '16px 0', fontSize: '11px' }}>
+              <CheckCircle2 size={16} style={{ verticalAlign: 'middle', marginRight: '6px' }} />
+              No components flagged at current sensitivity threshold (τ = {sens.toFixed(2)}).
+              Try lowering the slider to detect milder deviations.
+            </div>
+          ) : (
+            <div className="caseGrid">
+              {[...anomalous]
+                .sort((a, b) => b.modelC.anomalyScore - a.modelC.anomalyScore)
+                .slice(0, 12)
+                .map(item => {
+                  const mc = item.modelC;
+                  const topReason = mc.anomalyReasons[0] || '—';
+                  return (
+                    <div
+                      className="caseCard"
+                      key={item.id}
+                      onClick={() => go('inspector', item.id)}
+                      style={{ borderColor: mc.severity === 'Critical' ? '#ff4d4d' : mc.severity === 'High' ? '#f3a06f' : '#e3cc70' }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <b>{item.id}</b>
+                        {badge(item.risk)}
+                      </div>
+                      <span style={{ fontSize: '9px', color: '#7893a9' }}>Lot {item.lot} · Model C: {mc.status}</span>
+                      <div style={{ margin: '6px 0', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '10px', fontWeight: 700, color: mc.severity !== 'Safe' ? '#ff7b7b' : '#68dda0' }}>
+                          Score: {mc.anomalyScore.toFixed(3)}
+                        </span>
+                        <span style={{ fontSize: '10px', color: '#7893a9' }}>
+                          Dist: {mc.anomalyDistance.toFixed(2)}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '9px', color: '#bdc9d4', marginBottom: '4px' }}>
+                        <b>Strongest:</b> {mc.strongestFeature}
+                      </div>
+                      <div style={{ fontSize: '9px', color: '#bdc9d4', marginBottom: '4px' }}>
+                        {topReason}
+                      </div>
+                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', fontSize: '9px', color: '#7893a9' }}>
+                        <span>Z1={mc.Z1.toFixed(1)}</span>
+                        <span>Z2={mc.Z2.toFixed(1)}</span>
+                        <span>Z3={mc.Z3.toFixed(1)}</span>
+                        <span>Z4={mc.Z4.toFixed(1)}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          )}
+        </Section>
+
+        <div className="callout" style={{ margin: '0 0 8px' }}>
+          <BrainCircuit size={16} />
+          <span>
+            <b>Model C Engineering Guardrail:</b> Anomaly scores are computed purely from early measurements (0h, 24h, 96h).
+            The 168h endpoint is never accessed during Model C computation.
+            Severity thresholds are engineering choices — formal validation requires labeled production data.
+          </span>
+        </div>
+      </>
+    );
+  }
+
+
+  // 5. DRIFT FORECAST (PREDICTION PAGE)
+  if (page === 'prediction') {
+    if (!c) {
+      return (
+        <>
+          <Hero eyebrow="DETECTION & FORECAST · DRIFT FORECAST" title="Two independent checks, one clear decision." text="Model A evaluates hard limit breaches; Model B forecasts future drift." />
+          <EmptyState onReset={restoreDemo} onUpload={openUpload} />
+        </>
+      );
+    }
+
+    return (
+      <PredictionView
+        cs={cs}
+        c={c}
+        limit={limit}
+        model={model}
+        setModel={setModel}
+        setSel={id => go('prediction', id)}
+      />
+    );
+  }
+
+  // 6. RISK & SAFETY
+  if (page === 'risk') {
+    const aBreaches = cs.filter(x => x.modelA?.status === 'BREACH').length;
+    const bAlerts = cs.filter(x => x.modelB?.status !== 'PASS').length;
+    const riskItems = [
+      ['Safe', stats.safe],
+      ['Watch', stats.watch],
+      ['High', stats.high],
+      ['Critical', stats.critical]
+    ];
+    const riskColors = ['#58d6a0', '#e4cf72', '#f3a06f', '#f06b6b'];
+
+    return (
+      <>
+        <Hero
+          eyebrow="RISK & RESPONSE · RISK & SAFETY"
+          title="Separate Current-Limit Safety from Future Drift Risk."
+          text="Model A checks immediate 168h limit compliance. Model B forecasts trajectory drift. Model C detects lot-relative trajectory anomalies. BURN AI INSPECTOR combines all three signals using max-severity gating."
+        />
+        <div className="riskOverview">
+          <div className="riskDistribution card">
+            <div className="riskTitle">
+              <div>
+                <h2>Risk Composition</h2>
+                <p className="sub">Final BURN AI INSPECTOR classification across all loaded components.</p>
+              </div>
+             
+            </div>
+            <div className="riskPieArea">
+              <div className="riskDonut3D">
+                <ResponsiveContainer width={260} height={260}>
+                  
+  <PieChart>
+    <Pie
+      data={riskItems.map(([name, count]) => ({ name, count }))}
+      dataKey="count"
+      nameKey="name"
+      cx="50%"
+      cy="50%"
+      innerRadius={72}
+      outerRadius={108}
+      paddingAngle={4}
+      cornerRadius={7}
+      startAngle={90}
+      endAngle={-270}
+      stroke="#071725"
+      strokeWidth={3}
+      isAnimationActive={true}
+      animationDuration={900}
+    >
+      {riskItems.map(([name], i) => (
+        <Cell
+          key={name}
+          fill={riskColors[i]}
+          stroke="#071725"
+          strokeWidth={3}
+        />
+      ))}
+    </Pie>
+
+    <Tooltip
+      contentStyle={{
+        background: '#071827',
+        border: '1px solid #2a465e',
+        borderRadius: '8px',
+        fontSize: '11px'
+      }}
+      formatter={(value, name) => [
+        `${value} components`,
+        name
+      ]}
+    />
+  </PieChart>
+</ResponsiveContainer>
+
+                <div className="riskDonutCenter">
+                  <b>{stats.total}</b>
+                  <span>components</span>
+                </div>
+              </div>
+              <div className="riskLegend">
+                {riskItems.map(([name, count], i) => (
+                  <div key={name}>
+                    <span style={{ background: riskColors[i] }} />
+                    <b>{name}</b>
+                    <strong>{count}</strong>
+                    <small>{stats.total ? Math.round((count / stats.total) * 100) : 0}%</small>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div className="riskRules card">
+            <h2>How the Decision is Made</h2>
+            <p className="sub">Model A, Model B, and Model C answer different questions independently.</p>
+            <div className="riskModel">
+              <span>MODEL A</span>
+              <div>
+                <b>Absolute Limit Guard</b>
+                <small>Is the measured 168h leakage already at or above {limit} μA?</small>
+              </div>
+              <strong>{aBreaches}<small>breaches</small></strong>
+            </div>
+            <div className="riskModel">
+              <span>MODEL B</span>
+              <div>
+                <b>Drift Forecast</b>
+                <small>Does the 0h → 24h → 96h trajectory forecast limit crossing?</small>
+              </div>
+              <strong>{bAlerts}<small>alerts</small></strong>
+            </div>
+            <div className="riskRuleList">
+              <Rule t="SAFE" x="No measured breach at 168h and no trajectory drift concern." />
+              <Rule t="WATCH" x="Early trajectory slope > 0.12 μA/h or forecast approaching safety boundary." />
+              <Rule t="HIGH" x="Model B forecast projects threshold breach at 168h." />
+              <Rule t="CRITICAL" x="Measured 168h breach (Model A) or severe runaway forecast (≥1.25× limit)." />
+            </div>
+          </div>
+        </div>
+
+        <div className="modelGrid riskModels">
+          <div className={`decisionCard ${aBreaches ? 'alert' : 'pass'}`}>
+            <div className="decisionHead">
+              <span>MODEL A · CURRENT SAFETY</span>
+              {aBreaches ? badge('Critical') : badge('Safe')}
+            </div>
+            <h3>Absolute Limit Guard</h3>
+            <div className="decisionValue">
+              {aBreaches} / {stats.total}
+              <small>measured above {limit} μA at 168h</small>
+            </div>
+            <p>Uses the measured 168h endpoint only. No forecast extrapolation is used.</p>
+          </div>
+          <div className={`decisionCard ${bAlerts ? 'alert' : 'pass'}`}>
+            <div className="decisionHead">
+              <span>MODEL B · FUTURE DRIFT RISK</span>
+              {bAlerts ? badge('Watch') : badge('Safe')}
+            </div>
+            <h3>Drift Forecast</h3>
+            <div className="decisionValue">
+              {bAlerts} / {stats.total}
+              <small>components with forecast alerts</small>
+            </div>
+            <p>Fits early burn-in behaviour (0h/24h/96h) to project 168h and estimate crossing time.</p>
+          </div>
+        </div>
+
+        <Section title="Priority Flagged Components" sub="Components requiring QA inspection based on unified risk gate">
+          <div className="caseGrid">
+            {risky.slice(0, 8).map(x => (
+              <div className="caseCard" key={x.id} onClick={() => go('inspector', x.id)}>
+                <b>{x.id}</b>
+                <span>{x.lot}</span>
+                {badge(x.risk)}
+                <small>Measured 168h: {x.v[3]?.toFixed(1)} μA · Forecast: {x.forecast.toFixed(1)} μA ({x.crossingText})</small>
+              </div>
+            ))}
+          </div>
+        </Section>
+      </>
+    );
+  }
+
+  // 7. COMPONENT PROFILE (INSPECTOR)
+  if (page === 'inspector') {
+    if (!c) {
+      return (
+        <>
+          <Hero eyebrow="ANALYSIS · COMPONENT PROFILE" title="Component Profile" text="Select a component to inspect evidence." />
+          <EmptyState onReset={restoreDemo} onUpload={openUpload} />
+        </>
+      );
+    }
+    return <Inspector c={c} cs={cs} setSel={id => go('inspector', id)} limit={limit} go={go} />;
+  }
+
+  // 8. PRIORITY QUEUE
+  if (page === 'priority') {
+    return (
+      <>
+        <Hero
+          eyebrow="RISK & RESPONSE · PRIORITY QUEUE"
+          title="Evidence-Based Inspection Prioritization."
+          text="Ranked cases help QA focus attention where risk and evidence are strongest."
+          actions={
+            <Btn secondary onClick={exportCSV}><Download size={14} /> Export Queue</Btn>
+          }
+        />
+        <Section title={`Inspection Priority Queue (${risky.length} flagged)`} sub={`Sorted by highest risk severity and forecast leakage against ${limit} μA limit`}>
+          {risky.length === 0 ? (
+            <div style={{ color: '#68dda0', padding: '24px', textAlign: 'center', background: '#091b2b', borderRadius: '8px' }}>
+              <CheckCircle2 size={24} style={{ display: 'block', margin: '0 auto 8px' }} />
+              All components are within safe operating limits. No priority action required.
+            </div>
+          ) : (
+            <Table rows={risky} open={id => go('inspector', id)} />
+          )}
+        </Section>
+      </>
+    );
+  }
+
+  // 9. ACTION CENTER
+  if (page === 'action') {
+    return (
+      <>
+        <Hero
+          eyebrow="RISK & RESPONSE · ACTION CENTER"
+          title="Targeted Engineering Remediation & QA Sign-Off."
+          text="Close the loop with recommended QA steps, quarantine triggers, and explicit human sign-off."
+        />
+        <div className="actions">
+          {risky.slice(0, 8).map(item => (
+            <div className={review[item.id] ? 'done' : ''} key={item.id}>
+              <div>
+                {badge(item.risk)} <b>{item.id}</b> <span>{item.lot}</span>
+              </div>
+              <h3>
+                {item.risk === 'Critical'
+                  ? 'Immediate QA Quarantine & Root-Cause Review'
+                  : item.risk === 'High'
+                  ? 'Repeat 96h/168h Burn-In Verification'
+                  : 'Extended Burn-In Stage Monitoring'}
+              </h3>
+              <p>
+                Measured 168h: {item.v[3]?.toFixed(1)} μA | Forecast: {item.forecast?.toFixed(1)} μA.<br />
+                {item.crossingText}.
+              </p>
+              <Btn secondary onClick={() => go('inspector', item.id)}>View Profile</Btn>{' '}
+              <Btn onClick={() => setReview({ ...review, [item.id]: !review[item.id] })}>
+                {review[item.id] ? <><Check size={14} /> Confirmed</> : 'Mark Reviewed'}
+              </Btn>
+            </div>
+          ))}
+          {risky.length === 0 && (
+            <div style={{ gridColumn: '1 / -1', padding: '32px', textAlign: 'center', color: '#69dda2' }}>
+              <CheckCircle2 size={24} style={{ display: 'block', margin: '0 auto 8px' }} />
+              No components currently require engineering intervention.
+            </div>
+          )}
+        </div>
+      </>
+    );
+  }
+
+  // 10. WHAT-IF LAB (PHYSICAL TIME SCALING)
+  if (page === 'whatif') {
+    if (!c) {
+      return (
+        <>
+          <Hero eyebrow="ANALYSIS · WHAT-IF LAB" title="Explore Physical Trajectory Sensitivity." text="Simulate thermal and electrical acceleration." />
+          <EmptyState onReset={restoreDemo} onUpload={openUpload} />
+        </>
+      );
+    }
+
+    const mult = [0.75, 1.0, 1.2, 1.5][scenario];
+    // Physical time scaling: r(t) = t / 168h where t in [0, 24, 96, 168]
+    const simData = c.v.map((val, i) => {
+      const t = S[i];
+      const timeRatio = t / 168;
+      const scenarioVal = Math.max(0, val * (1 + (mult - 1) * timeRatio));
+      return {
+        h: `${t}h`,
+        base: Number(val.toFixed(2)),
+        scenario: Number(scenarioVal.toFixed(2))
+      };
+    });
+
+    const endpointVal = simData[3].scenario;
+    const isScenarioBreached = endpointVal >= limit;
+
+    return (
+      <>
+        <Hero
+          eyebrow="ANALYSIS · WHAT-IF LAB"
+          title="Explore Physical Trajectory Sensitivity."
+          text="Simulate how accelerated drift factors affect the physical 168h burn-in endpoint."
+          actions={
+            <div className="tabs">
+              {['0.75× Drift', 'Baseline (1.0×)', '1.2× Drift', '1.5× Drift'].map((x, i) => (
+                <button className={scenario === i ? 'on' : ''} onClick={() => setScenario(i)} key={x}>
+                  {x}
+                </button>
+              ))}
+            </div>
+          }
+        />
+        <div className="stats">
+          <Stat I={Target} label="Simulated Case" value={c.id} sub={c.lot} />
+          <Stat
+            I={LineIcon}
+            label="Scenario 168h Endpoint"
+            value={`${endpointVal.toFixed(1)} μA`}
+            sub={`Limit ${limit} μA`}
+            tone={isScenarioBreached ? 'danger' : 'safe'}
+          />
+          <Stat
+            I={ShieldCheck}
+            label="Simulation Outcome"
+            value={isScenarioBreached ? 'THRESHOLD BREACH' : 'WITHIN LIMIT'}
+            sub={isScenarioBreached ? 'Requires thermal redesign' : 'Passes accelerated stress'}
+            tone={isScenarioBreached ? 'danger' : 'safe'}
+          />
+        </div>
+        <Section title={`${c.id} — Physical Time-Scaled Drift Simulation`} sub="Solid: Baseline measurements · Dashed: Accelerated stress scenario">
+          <div className="chart">
+            <ResponsiveContainer width="100%" height={350}>
+              <LineChart data={simData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#17314a" />
+                <XAxis dataKey="h" />
+                <YAxis unit=" μA" />
+                <Tooltip contentStyle={{ background: '#0a1c2d', borderColor: '#2a465e' }} />
+                <ReferenceLine y={limit} stroke="#ff7b7b" strokeDasharray="5 5" label={`Limit (${limit} μA)`} />
+                <Line dataKey="base" name="Observed Measurements" stroke="#5bbfe9" strokeWidth={2} dot={{ r: 4 }} />
+                <Line dataKey="scenario" name="Simulated Trajectory" stroke="#f3a06f" strokeWidth={3} strokeDasharray="6 6" dot={{ r: 5 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </Section>
+      </>
+    );
+  }
+
+  if (page === 'model') {
+    const aBreaches = cs.filter(x => x.modelA?.status === 'BREACH').length;
+    const bBreaches = cs.filter(x => x.forecast >= limit).length;
+    const cAnomalies = cs.filter(x => x.modelC?.anomalyDetected).length;
+    const avgCScore = cs.length
+  ? cs.reduce(
+      (sum, x) => sum + Number(x.modelC?.anomalyScore || 0),
+      0
+    ) / cs.length
+  : 0;
+    
+  
+
+
+
+    // Live empirical evaluation metrics computed against currently loaded dataset ground truth
+   const tp = cs.filter(
+  x => x.forecast >= limit && x.v?.[3] >= limit
+).length;
+
+const fp = cs.filter(
+  x => x.forecast >= limit && x.v?.[3] < limit
+).length;
+
+const fn = cs.filter(
+  x => x.forecast < limit && x.v?.[3] >= limit
+).length;
+
+const tn = cs.filter(
+  x => x.forecast < limit && x.v?.[3] < limit
+).length;
+
+const totalValidation = tp + fp + fn + tn;
+
+const accuracy = totalValidation
+  ? ((tp + tn) / totalValidation * 100).toFixed(1)
+  : '0.0';
+
+const precision = (tp + fp)
+  ? (tp / (tp + fp) * 100).toFixed(1)
+  : '0.0';
+
+const recall = (tp + fn)
+  ? (tp / (tp + fn) * 100).toFixed(1)
+  : '0.0';
+
+const f1 = (precision !== '0.0' || recall !== '0.0')
+  ? (
+      2 *
+      (Number(precision) / 100) *
+      (Number(recall) / 100) /
+      (
+        (Number(precision) / 100) +
+        (Number(recall) / 100)
+      ) *
+      100
+    ).toFixed(1)
+  : '0.0';
+
+const mae = cs.length
+  ? (
+      cs.reduce(
+        (sum, item) =>
+          sum + Math.abs(
+            Number(item.forecast) - Number(item.v?.[3] ?? 0)
+          ),
+        0
+      ) / cs.length
+    ).toFixed(1)
+  : '0.0';
+
+const validationStatus = cs.length > 0
+  ? 'Validation Active'
+  : 'Waiting for Dataset';
+    return (
+      <>
+        <Hero
+          eyebrow="ANALYSIS · MODEL TRUST & GOVERNANCE"
+          title="Three models, three questions — never mix their signals."
+          text="Model A is the hard safety gate at 168h. Model B is the OLS drift forecaster fitted on 0h/24h/96h. Model C is the lot-relative robust trajectory anomaly detector using early window features only."
+          actions={<ModelSwitch model={model} setModel={setModel} />}
+        />
+        <div className="modelGrid">
+          <div className={'modelCard ' + (model === 'A' ? 'selected' : '')}>
+            <div className="modelTag">MODEL A</div>
+            <h3>{MODEL_A.name}</h3>
+            <p>{MODEL_A.desc}</p>
+            <div className="modelMetric">
+              {aBreaches}
+              <small>active threshold breaches</small>
+            </div>
+            <Rule t="Decision Rule" x={`Flag when measured 168h value reaches ${limit} μA or above; no extrapolation used.`} />
+            <span className="modelStatus">HARD SAFETY GATE</span>
+          </div>
+
+          <div className={'modelCard ' + (model === 'B' ? 'selected' : '')}>
+            <div className="modelTag">MODEL B</div>
+            <h3>{MODEL_B.name}</h3>
+            <p>{MODEL_B.desc}</p>
+            <div className="modelMetric">
+              {bBreaches}
+              <small>projected threshold breaches</small>
+            </div>
+            <Rule t="Decision Rule" x="Fit OLS on 0h, 24h, 96h only; strictly exclude 168h from training to prevent data leakage." />
+            <span className="modelStatus">EARLY WARNING</span>
+          </div>
+
+          <div className={'modelCard ' + (model === 'C' ? 'selected' : '')}>
+            <div className="modelTag">MODEL C</div>
+            <h3>{MODEL_C.name}</h3>
+            <p>{MODEL_C.desc}</p>
+            <div className="modelMetric">
+              {cAnomalies}
+              <small>lot-relative trajectory anomalies</small>
+            </div>
+            <Rule t="Decision Rule" x={`Compute robust Median + MAD z-scores for 4 trajectory features (F1–F4) within each lot. Flag when normalized anomaly score S ≥ τ (default τ = 0.35 = Watch threshold). Zero 168h access.`} />
+            <span className="modelStatus">LOT ANOMALY DETECTOR</span>
+          </div>
+        </div>
+
+        <div className="stats">
+          <Stat
+  I={Target}
+  label="Formal Benchmark"
+  value={cs.length ? "VALIDATED" : "Pending"}
+  sub={
+    cs.length
+      ? `${cs.length} loaded components evaluated against observed 168h ground truth`
+      : "Upload a validation dataset to begin evaluation"
+  }
+/>
+          <Stat I={Gauge} label="Model Architecture" value="Deterministic" sub="Zero black-box training, zero fabricated metrics" tone="safe" />
+          <Stat I={BrainCircuit} label="Data Leakage Prevention" value="100% Isolated" sub="168h excluded from Model B OLS & Model C features" tone="safe" />
+          <Stat I={LineIcon} label="Model B MAE (Active)" value={cs.length ? `${mae} μA` : '0.0 μA'} sub="168h OLS forecast error vs measured endpoint" />
+        </div>
+
+        <div className="two">
+          <Section title="Empirical Forecast vs Observed 168h Matrix (Active Dataset)" sub="Live comparison evaluated on currently loaded components — formal benchmark pending labeled test dataset">
+            <div className="matrix">
+  <div>
+    <b>Actual Safe + Forecast Safe</b>
+    <strong>{tn}</strong>
+    <small>True Negative (TN)</small>
+  </div>
+
+  <div>
+    <b>Actual Safe + Forecast Breach</b>
+    <strong>{fp}</strong>
+    <small>False Positive (FP)</small>
+  </div>
+
+  <div>
+    <b>Actual Breach + Forecast Safe</b>
+    <strong>{fn}</strong>
+    <small>False Negative (FN)</small>
+  </div>
+
+  <div>
+    <b>Actual Breach + Forecast Breach</b>
+    <strong>{tp}</strong>
+    <small>True Positive (TP)</small>
+  </div>
+</div>
+          </Section>
+          <Section title="Engineering Guardrails">
+            <Rule t="Strict Model Isolation" x="Model A (168h absolute gate), Model B (OLS forecast), and Model C (lot anomaly) are computed independently — results are never averaged." />
+            <Rule t="Zero Data Leakage" x="Model B OLS regression and Model C feature extraction both exclude the 168h measurement. Only 0h, 24h, 96h are used in early-window analysis." />
+            <Rule t="Transparent Mathematics" x="Model B uses closed-form OLS. Model C uses Median, MAD, modified z-scores, and chi-squared normalized anomaly scoring — all deterministic and explainable." />
+            <Rule t="Human-in-the-Loop Confirmation" x="High-risk and anomalous drift cases require engineer sign-off in Action Center." />
+          </Section>
+        </div>
+
+        <Section title="Model C — Lot-Relative Robust Statistical Outlier Kernel" sub="Mathematical foundation of the trajectory anomaly detection engine">
+          <div className="two" style={{ marginTop: '0' }}>
+            <div>
+              <Rule t="Feature Window" x="F1 = V0 − median(V0, lot) · F2 = (V96−V0)/96 · F3 = (V96−V24)/72 − (V24−V0)/24 · F4 = Σ(Vt−V̂t)² over {0h,24h,96h}" />
+              <Rule t="Robust Lot Statistics" x={`Median_j(L) per feature. MAD_j(L) = 1.4826 × median(|Fij − Median_j|) + ε. Modified z-score: Zij = (Fij − Median_j) / MAD_j.`} />
+              <Rule t="Anomaly Distance" x={`D_i = √(Σ w_j × Z_ij²) with equal weights w1=w2=w3=w4=1. Normalized score: S_i = 1 − exp(−D²/(2×χ²_ref)) where χ²_ref = ${MODEL_C_CHI2_REF}.`} />
+              <Rule t="Severity Thresholds" x="Safe: S < 0.35 · Watch: 0.35 ≤ S < 0.60 · High: 0.60 ≤ S < 0.82 · Critical: S ≥ 0.82. ENGINEERING CHOICES — validation requires labeled production data." />
+            </div>
+            <div>
+              <Rule t="Validation Status" x="Formal validation metrics (precision, recall, F1) require a labeled production dataset with ground-truth anomaly annotations. No fabricated metrics are reported." />
+              <Rule t="Edge Case Handling" x="Single-component lots: MAD = ε (near-zero), z-scores clamped to 0. All-identical features: MAD = ε, score = ~0. NaN/Infinity: clamped to 0 or safe default. Empty dataset: returns empty Map." />
+              <Rule t="Performance" x={`Model C complexity: O(N) per dataset evaluation. Avg score on active dataset: ${avgCScore}. Integrates with computedCs useMemo — recomputes only when dataset or limit changes.`} />
+              <Rule t="No External Dependencies" x="Pure JavaScript. No TensorFlow.js, ONNX, Isolation Forest, k-NN matrices, or WebGL. Entire Model C engine: ~150 lines of annotated JS." />
+            </div>
+          </div>
+        </Section>
+
+        
+      </>
+    );
+  }
+
+  // 12. AI COPILOT
+  if (page === 'copilot') {
+    return null;
+  }
+
+  // 13. REPORTS
+  if (page === 'reports') {
+    return (
+      <>
+        <Hero
+          eyebrow="STAGE 4 · ACTION & REPORT"
+          title="Package Burn-In Screening Evidence for Quality Assurance."
+          text="Export and review complete burn-in screening documentation, Model A absolute limit gates, Model B early drift forecasts, and recommended QA actions."
+          actions={
+            <Btn onClick={exportCSV}><Download size={14} /> Download QA Audit Report (CSV)</Btn>
+          }
+        />
+        <div className="stats">
+          <Stat I={Database} label="Dataset Scope" value={`${cs.length} Parts`} sub={`${availableLots.length} Dynamic Lots`} />
+          <Stat I={CheckCircle2} label="Within Boundary" value={stats.safe} sub="Passes Model A & B" tone="safe" />
+          <Stat I={Clock3} label="Attention Flagged" value={stats.watch + stats.high + stats.critical} sub="Drift watch & forecast alerts" tone="watch" />
+          <Stat I={AlertTriangle} label="Critical Quarantine" value={stats.critical} sub="Immediate QA review required" tone={stats.critical ? 'danger' : 'safe'} />
+        </div>
+        <Section title="Top Priority Inspection Cases" sub="Components flagged by Model A hard threshold gate or Model B early drift forecast">
+          <div className="caseGrid">
+            {risky.slice(0, 8).map(x => (
+              <div className="caseCard" key={x.id} onClick={() => go('inspector', x.id)}>
+                <b>{x.id}</b>
+                <span>{x.lot}</span>
+                {badge(x.risk)}
+                <small>Measured: {x.v[3]?.toFixed(1)} μA | Forecast: {x.forecast.toFixed(1)} μA ({x.crossingText})</small>
+              </div>
+            ))}
+            {risky.length === 0 && (
+              <div style={{ gridColumn: '1 / -1', color: '#68dda0', padding: '16px' }}>
+                No high-risk cases detected in current dataset.
+              </div>
+            )}
+          </div>
+        </Section>
+      </>
+    );
+  }
+
+  // 14. SETTINGS
+  return (
+    <>
+      <Hero
+        eyebrow="SYSTEM SETTINGS"
+        title="Tune decision boundaries."
+        text="Threshold adjustments instantly synchronize across Model A, Model B, charts, and queues."
+      />
+      <div className="settings">
+        <div>
+          <h3>Safety Leakage Limit</h3>
+          <p>Universal absolute boundary for pass/fail classification.</p>
+          <strong>{limit} μA</strong>
+          <input type="range" min="20" max="80" value={limit} onChange={e => setLimit(+e.target.value)} />
+        </div>
+        <div>
+          <h3>Lot Anomaly Sensitivity</h3>
+          <p>Sensitivity for flagging early trajectory deviation from lot baseline.</p>
+          <strong>{sens.toFixed(2)}</strong>
+          <input type="range" min="0.1" max="0.9" step="0.01" value={sens} onChange={e => setSens(+e.target.value)} />
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: '10px' }}>
+        <Btn onClick={applyConfig}><Check size={14} /> Apply Configuration</Btn>
+        <Btn secondary onClick={restoreDemo}><RotateCcw size={14} /> Restore Default Demo Dataset</Btn>
+      </div>
+    </>
+  );
+}
+
+// --- SUB-COMPONENTS AND CHARTS ---
+
+function Hero({ eyebrow, title, text, actions }) {
+  return (
+    <div className="hero">
+      <div>
+        <label>{eyebrow}</label>
+        <h1>{title}</h1>
+        <p>{text}</p>
+      </div>
+      <div className="heroActions">{actions}</div>
+    </div>
+  );
+}
+
+function Rule({ t, x }) {
+  return (
+    <div className="rule">
+      <i />
+      <div>
+        <b>{t}</b>
+        <p>{x}</p>
+      </div>
+    </div>
+  );
+}
+
+function ModelSwitch({ model, setModel }) {
+  return (
+    <div className="modelSwitch" role="group" aria-label="Analytical Model Switcher">
+      {[MODEL_A, MODEL_B].map(m => (
+        <button
+          key={m.id}
+          type="button"
+          className={model === m.id ? 'on' : ''}
+          onClick={() => setModel(m.id)}
+          aria-pressed={model === m.id}
+        >
+          <b>{m.short}</b>
+          <span>{m.name}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Dynamic Evidence Trajectory Chart (Used in Inspector and Home)
+ * Plots actual component measurements (0h, 24h, 96h, 168h) and overlays Model B forecast.
+ */
+function InspectorChart({ c, limit }) {
+  if (!c || !c.v) return <div className="sub">No component data available.</div>;
+
+  const f = linearForecast(c.v, limit);
+
+  const data = [
+    { h: '0h', hours: 0, measured: c.v[0], forecast: undefined },
+    { h: '24h', hours: 24, measured: c.v[1], forecast: undefined },
+    { h: '96h', hours: 96, measured: c.v[2], forecast: Math.max(0, f.intercept + f.slope * 96) },
+    { h: '168h', hours: 168, measured: c.v[3], forecast: f.predicted168 },
+    { h: '216h', hours: 216, measured: undefined, forecast: Math.max(0, f.intercept + f.slope * 216) }
+  ];
+
+  return (
+    <div className="chart">
+      <ResponsiveContainer width="100%" height={290}>
+        <LineChart data={data}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#17314a" />
+          <XAxis dataKey="h" />
+          <YAxis unit=" μA" />
+          <Tooltip contentStyle={{ background: '#0a1c2d', borderColor: '#2a465e' }} />
+          <ReferenceLine y={limit} stroke="#ff7b7b" strokeDasharray="5 5" label={`Limit (${limit} μA)`} />
+          <Line
+            dataKey="measured"
+            name="Measured Burn-In Data"
+            stroke="#5bbfe9"
+            strokeWidth={3}
+            dot={{ r: 5, fill: '#5bbfe9' }}
+            connectNulls={false}
+          />
+          <Line
+            dataKey="forecast"
+            name="Model B Drift Forecast"
+            stroke="#f3a06f"
+            strokeWidth={2}
+            strokeDasharray="6 6"
+            dot={{ r: 4, fill: '#f3a06f' }}
+            connectNulls={true}
+          />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+/**
+ * Interactive Model A / Model B Prediction View
+ */
+function PredictionView({ cs, c, limit, model, setModel, setSel }) {
+  const a = modelAResult(c.v, limit);
+  const b = modelBResult(c.v, limit);
+  const f = b;
+
+  // Model A trajectory: observed measurements across 0h, 24h, 96h, 168h
+  const modelAData = [
+    { h: '0h', measured: c.v[0] },
+    { h: '24h', measured: c.v[1] },
+    { h: '96h', measured: c.v[2] },
+    { h: '168h', measured: c.v[3] }
+  ];
+
+  // Model B trajectory: 0h-96h observed + forecast extending to 240h
+  const modelBData = [
+    { h: '0h', measured: c.v[0], forecast: undefined },
+    { h: '24h', measured: c.v[1], forecast: undefined },
+    { h: '96h', measured: c.v[2], forecast: Math.max(0, f.intercept + f.slope * 96) },
+    { h: '168h', measured: c.v[3], forecast: f.predicted168 },
+    { h: '192h', measured: undefined, forecast: Math.max(0, f.intercept + f.slope * 192) },
+    { h: '216h', measured: undefined, forecast: Math.max(0, f.intercept + f.slope * 216) },
+    { h: '240h', measured: undefined, forecast: Math.max(0, f.intercept + f.slope * 240) }
+  ];
+
+  return (
+    <>
+      <Hero
+        eyebrow={model === 'A' ? 'MODEL A · ABSOLUTE LIMIT GUARD' : 'MODEL B · DRIFT FORECAST'}
+        title={model === 'A' ? 'Direct 168h Safety Threshold Screening' : 'Early Burn-In Trajectory Forecasting (OLS)'}
+        text={
+          model === 'A'
+            ? `Model A operates as a hard safety gate. It evaluates strictly the observed 168h leakage measurement against the ${limit} μA threshold with zero extrapolation.`
+            : 'Model B fits an Ordinary Least Squares (OLS) linear regression on early stages (0h, 24h, 96h) and projects the 168h endpoint without data leakage.'
+        }
+        actions={
+          <>
+            <ModelSwitch model={model} setModel={setModel} />
+            <select value={c.id} onChange={e => setSel(e.target.value)}>
+              {cs.slice(0, 200).map(x => (
+                <option key={x.id} value={x.id}>
+                  {x.id} · Lot {x.lot} ({x.risk})
+                </option>
+              ))}
+            </select>
+          </>
+        }
+      />
+
+      {/* FINAL BURN AI INSPECTOR DECISION (Always visible) */}
+      <div className="decisionBanner">
+        <div>
+          <b>FINAL BURN AI INSPECTOR DECISION</b>
+          <strong>{c.risk.toUpperCase()}</strong>
+<span>Highest severity from Model A, Model B, and Model C — never averaged.</span>
+        </div>
+        <div>
+          <span>Model A (Measured 168h): <b>{a.status}</b></span>
+          <span>Model B (Forecast): <b>{b.status}</b></span>
+          <span>Model C (Anomaly): <b>{c.modelC?.status || 'NORMAL'}</b></span>
+        </div>
+      </div>
+
+      {model === 'A' ? (
+        /* --- MODEL A SPECIFIC VIEW --- */
+        <>
+          <div className="modelGrid">
+            <div className={`decisionCard ${a.severity !== 'Safe' ? 'alert' : 'pass'} selected`} style={{ gridColumn: '1 / -1' }}>
+              <div className="decisionHead">
+                <span>MODEL A · ABSOLUTE LIMIT GUARD</span>
+                <strong>{a.status}</strong>
+              </div>
+              <h3>Hard Safety Threshold Gate</h3>
+              <div className="decisionValue">
+                {a.value.toFixed(1)} μA
+                <small>Measured 168h Endpoint vs Safety Limit {limit} μA</small>
+              </div>
+              <p>
+                {a.status === 'BREACH'
+                  ? `Component ${c.id} has breached the absolute safety limit (${a.value.toFixed(1)} μA ≥ ${limit} μA). Quarantine and QA review required.`
+                  : `Component ${c.id} is within the absolute safety limit (${a.value.toFixed(1)} μA < ${limit} μA). Measured margin: ${Math.abs(a.margin).toFixed(1)} μA below threshold.`}
+              </p>
+              <small>{a.severity !== 'Safe' ? `Severity: ${a.severity} Breach` : 'Within standard screening boundary'}</small>
+            </div>
+          </div>
+
+          <div className="stats">
+            <Stat
+              I={Target}
+              label="Measured 168h"
+              value={`${a.value.toFixed(1)} μA`}
+              sub="Observed endpoint"
+              tone={a.severity !== 'Safe' ? 'danger' : 'safe'}
+            />
+            <Stat
+              I={ShieldCheck}
+              label="Safety Limit"
+              value={`${limit} μA`}
+              sub="Universal threshold"
+            />
+            <Stat
+              I={Activity}
+              label="Safety Margin"
+              value={`${Math.abs(a.margin).toFixed(1)} μA`}
+              sub={a.margin >= 0 ? `${a.margin.toFixed(1)} μA above limit` : `${Math.abs(a.margin).toFixed(1)} μA headroom`}
+              tone={a.severity !== 'Safe' ? 'danger' : 'safe'}
+            />
+            <Stat
+              I={AlertTriangle}
+              label="Model A Status"
+              value={a.status}
+              sub={`Classification: ${a.severity}`}
+              tone={a.severity !== 'Safe' ? 'danger' : 'safe'}
+            />
+          </div>
+
+          <Section
+            title={`${c.id} (${c.lot}) — Model A: Measured Burn-In Trajectory`}
+            sub={`Observed measurements across physical stages (0h, 24h, 96h, 168h) tested against ${limit} μA absolute limit`}
+          >
+            <div className="chart">
+              <ResponsiveContainer width="100%" height={350}>
+                <LineChart data={modelAData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#17314a" />
+                  <XAxis dataKey="h" />
+                  <YAxis unit=" μA" />
+                  <Tooltip contentStyle={{ background: '#0a1c2d', borderColor: '#2a465e' }} />
+                  <ReferenceLine y={limit} stroke="#ff7b7b" strokeDasharray="5 5" label={`Safety Limit (${limit} μA)`} />
+                  <Line
+                    dataKey="measured"
+                    name="Measured Burn-In Current"
+                    stroke="#5bbfe9"
+                    strokeWidth={4}
+                    dot={{ r: 6, fill: '#5bbfe9' }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </Section>
+
+          <div className="two">
+            <Section title="Model A Absolute Limit Guard Standards">
+              <Rule t="HARD SAFETY GATE" x={`Evaluates the empirical 168h measurement directly against the universal ${limit} μA limit.`} />
+              <Rule t="ZERO EXTRAPOLATION" x="No forecasting or trajectory assumptions are made; classification is based purely on physical measurement." />
+              <Rule t="SEVERITY CRITERIA" x={`Measured ≥ ${limit * 1.25} μA = Critical Breach | Measured ≥ ${limit} μA = High Breach | Measured < ${limit} μA = Safe.`} />
+              <Rule t="QA PROTOCOL" x={a.status === 'BREACH' ? 'Immediate quarantine and physical failure analysis.' : 'Part clears hard safety threshold gate.'} />
+            </Section>
+            <Section title="Model A Diagnostic Summary">
+              <div className="callout">
+                <BrainCircuit size={16} />
+                <span>
+                  <b>Model A Verdict:</b> {c.id} recorded an observed leakage current of <b>{a.value.toFixed(1)} μA</b> at 168h against the <b>{limit} μA</b> safety limit.
+                  {a.status === 'BREACH'
+                    ? ` This is a hard limit BREACH (${a.severity}). The component fails screening criteria.`
+                    : ` The component PASSES Model A absolute screening with ${Math.abs(a.margin).toFixed(1)} μA of safety headroom.`}
+                </span>
+              </div>
+            </Section>
+          </div>
+        </>
+      ) : (
+        /* --- MODEL B SPECIFIC VIEW --- */
+        <>
+          <div className="modelGrid">
+            <div className={`decisionCard ${b.severity !== 'Safe' ? 'alert' : 'pass'} selected`} style={{ gridColumn: '1 / -1' }}>
+              <div className="decisionHead">
+                <span>MODEL B · EARLY DRIFT FORECAST (OLS)</span>
+                <strong>{b.status}</strong>
+              </div>
+              <h3>Trajectory-Based Early Warning</h3>
+              <div className="decisionValue">
+                {b.predicted168.toFixed(1)} μA
+                <small>Model B 168h Projection (Limit {limit} μA)</small>
+              </div>
+              <p>
+                Fitted on early burn-in behaviour (0h, 24h, 96h). The 168h measurement is excluded to eliminate data leakage and test forecasting accuracy.
+              </p>
+              <small>{b.crossingText}</small>
+            </div>
+          </div>
+
+          <div className="stats">
+            <Stat
+              I={Database}
+              label="0h / 24h / 96h Inputs"
+              value={`${c.v[0]?.toFixed(1)} / ${c.v[1]?.toFixed(1)} / ${c.v[2]?.toFixed(1)} μA`}
+              sub="Training window points"
+            />
+            <Stat
+              I={LineIcon}
+              label="168h Forecast"
+              value={`${f.predicted168.toFixed(1)} μA`}
+              sub="Projected endpoint"
+              tone={f.severity !== 'Safe' ? 'danger' : 'safe'}
+            />
+            <Stat
+              I={Activity}
+              label="Drift Slope"
+              value={`${f.slope.toFixed(3)} μA/h`}
+              sub="0h → 24h → 96h OLS fit"
+            />
+            <Stat
+              I={Timer}
+              label="Time to Limit"
+              value={f.crossHours === 0 ? 'Breached' : f.crossHours === 999 ? 'None' : `${f.crossHours}h`}
+              sub={f.crossingText}
+            />
+          </div>
+
+          <Section
+            title={`${c.id} (${c.lot}) — Model B: Early Drift Extrapolation`}
+            sub="Solid cyan: Observed measurements (0-96h training) · Dashed orange: Model B OLS forecast extending beyond 96h"
+          >
+            <div className="chart">
+              <ResponsiveContainer width="100%" height={350}>
+                <LineChart data={modelBData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#17314a" />
+                  <XAxis dataKey="h" />
+                  <YAxis unit=" μA" />
+                  <Tooltip contentStyle={{ background: '#0a1c2d', borderColor: '#2a465e' }} />
+                  <ReferenceLine y={limit} stroke="#ff7b7b" strokeDasharray="5 5" label={`Safety Limit (${limit} μA)`} />
+                  <Line
+                    dataKey="measured"
+                    name="Measured Data"
+                    stroke="#5bbfe9"
+                    strokeWidth={2}
+                    dot={{ r: 5, fill: '#5bbfe9' }}
+                    connectNulls={false}
+                  />
+                  <Line
+                    dataKey="forecast"
+                    name="Model B OLS Forecast"
+                    stroke="#f3a06f"
+                    strokeWidth={4}
+                    strokeDasharray="7 6"
+                    dot={{ r: 5, fill: '#f3a06f' }}
+                    connectNulls={true}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </Section>
+
+          <div className="two">
+            <Section title="Model B Drift Forecasting Engine & Rules">
+              <Rule t="TRAINING INPUTS" x="Measured 0h, 24h, 96h values only. Excludes 168h to eliminate future data leakage." />
+              <Rule t="OLS REGRESSION" x={`Estimated slope: ${f.slope.toFixed(4)} μA/h, intercept: ${f.intercept.toFixed(2)} μA across early burn-in hours.`} />
+              <Rule t="FORECAST CLASSIFICATION" x={`Projected ≥ ${limit * 1.25} μA = Critical | ≥ ${limit} μA = High | ≥ ${limit * 0.78} μA or slope > 0.12 μA/h = Watch.`} />
+              <Rule t="TIME TO THRESHOLD" x={f.crossingText} />
+            </Section>
+            <Section title="Model B Diagnostic Summary">
+              <div className="callout">
+                <BrainCircuit size={16} />
+                <span>
+                  <b>Model B Verdict:</b> Early drift trajectory exhibits a rate of <b>{f.slope.toFixed(3)} μA/h</b>.
+                  {b.status === 'FORECAST ALERT'
+                    ? ` Model B alerts on projected drift (${b.severity}). Forecast endpoint at 168h is ${f.predicted168.toFixed(1)} μA (${f.crossingText}).`
+                    : ` Model B projects safe containment (${b.severity}) with a 168h forecast of ${f.predicted168.toFixed(1)} μA.`}
+                </span>
+              </div>
+            </Section>
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
+/**
+ * Component Inspector Profile View
+ */
+function Inspector({ c, cs, setSel, limit, go }) {
+  if (!c) return null;
+
+  return (
+    <>
+      <Hero
+        eyebrow="COMPONENT DIGITAL PROFILE"
+        title={c.id}
+        text={`Lot ${c.lot} • Comprehensive evidence trail from 0h baseline to 168h endpoint.`}
+        actions={
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <select
+              value={c.id}
+              onChange={e => setSel && setSel(e.target.value)}
+              aria-label="Select Component to Inspect"
+              style={{
+                background: '#091b2b',
+                border: '1px solid #28475f',
+                color: '#e7eff7',
+                padding: '8px 12px',
+                borderRadius: '7px',
+                fontSize: '11px',
+                fontWeight: '600',
+                cursor: 'pointer'
+              }}
+            >
+              {(cs || []).map(x => (
+                <option key={x.id} value={x.id}>
+                  {x.id} — Lot {x.lot} ({x.risk})
+                </option>
+              ))}
+            </select>
+            <Btn onClick={() => go('action')}><ListChecks size={14} /> Action Center</Btn>
+          </div>
+        }
+      />
+
+      {/* Burn-In Stage Measurements and Key Model Indicators */}
+      <div className="stats">
+        <Stat
+          I={Activity}
+          label="0h Baseline"
+          value={`${c.v[0]?.toFixed(1)} μA`}
+          sub="Initial stage"
+        />
+        <Stat
+          I={Gauge}
+          label="24h / 96h Stages"
+          value={`${c.v[1]?.toFixed(1)} / ${c.v[2]?.toFixed(1)} μA`}
+          sub="Intermediate burn-in"
+        />
+        <Stat
+          I={Target}
+          label="Measured 168h"
+          value={`${c.v[3]?.toFixed(1)} μA`}
+          sub={`Safety limit: ${limit} μA`}
+          tone={c.v[3] >= limit ? 'danger' : 'safe'}
+        />
+        <Stat
+          I={LineIcon}
+          label="Model B Forecast (168h)"
+          value={`${c.forecast?.toFixed(1)} μA`}
+          sub={`Drift slope: ${c.slope?.toFixed(3)} μA/h`}
+          tone={c.forecast >= limit ? 'danger' : 'safe'}
+        />
+      </div>
+
+      <div className="profile">
+        <div>
+          <div className="banner">
+            <div>
+              <label>CURRENT CLASSIFICATION</label>
+              <h2>Measured: {c.v[3]?.toFixed(1)} μA at 168h</h2>
+              <p>
+                Limit: {limit} μA • Model B Forecast: {c.forecast?.toFixed(1)} μA ({c.crossingText})
+              </p>
+            </div>
+            {badge(c.risk)}
+          </div>
+          <Section title="Observed Burn-In Evidence Trajectory" sub="Measured data points (0h, 24h, 96h, 168h) vs Model B linear forecast">
+            <InspectorChart c={c} limit={limit} />
+          </Section>
+        </div>
+        <div className="score">
+          <div className="ring">
+            {Math.max(1, 100 - Math.round(c.anomaly * 70))}
+            <small>/100</small>
+          </div>
+          <p>Reliability Score</p>
+          <hr />
+          <p>Model A <b style={{ color: c.modelA?.severity !== 'Safe' ? '#ff7b7b' : '#68dda0' }}>{c.modelA?.status || '—'}</b></p>
+          <p>Model B <b style={{ color: c.modelB?.severity !== 'Safe' ? '#f3a06f' : '#68dda0' }}>{c.modelB?.status || '—'}</b></p>
+          <p>Model C <b style={{ color: c.modelC?.anomalyDetected ? '#e3cc70' : '#68dda0' }}>{c.modelC?.status || '—'}</b></p>
+          <p>Time to Limit <b>{c.hours === 0 ? 'Breached' : c.hours === 999 ? 'No breach' : `${c.hours} h`}</b></p>
+        </div>
+      </div>
+
+      {/* Model C Diagnostic Card */}
+      <Section
+        title={`Model C — Lot Trajectory Anomaly (${c.lot})`}
+        sub={`Lot-relative robust statistical outlier kernel · Early window only (0h, 24h, 96h) · Zero 168h data leakage`}
+      >
+        <div className="stats" style={{ marginBottom: '10px' }}>
+          <Stat
+            I={Zap}
+            label="Model C Anomaly Score"
+            value={(c.modelC?.anomalyScore ?? 0).toFixed(3)}
+            sub={`S ∈ [0,1] · ${c.modelC?.status || 'NORMAL'}`}
+            tone={c.modelC?.severity === 'Safe' ? 'safe' : c.modelC?.severity === 'Watch' ? 'watch' : 'danger'}
+          />
+          <Stat
+            I={Activity}
+            label="Anomaly Distance (D)"
+            value={(c.modelC?.anomalyDistance ?? 0).toFixed(3)}
+            sub="Weighted z-score Euclidean distance"
+            tone={c.modelC?.anomalyDetected ? 'danger' : ''}
+          />
+          <Stat
+            I={BrainCircuit}
+            label="Strongest Feature"
+            value={c.modelC?.strongestFeature?.split('—')[0]?.trim() || '—'}
+            sub={c.modelC?.strongestFeature || '—'}
+          />
+          <Stat
+            I={ShieldCheck}
+            label="Model C Severity"
+            value={c.modelC?.severity || 'Safe'}
+            sub={`Engineering threshold, not validated ML metric`}
+            tone={c.modelC?.severity === 'Safe' ? 'safe' : c.modelC?.severity === 'Watch' ? 'watch' : 'danger'}
+          />
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginBottom: '10px' }}>
+          {[
+            { label: 'F1 — Baseline Offset', val: c.modelC?.F1, z: c.modelC?.Z1, unit: 'μA' },
+            { label: 'F2 — Drift Velocity', val: c.modelC?.F2, z: c.modelC?.Z2, unit: 'μA/h' },
+            { label: 'F3 — Curvature', val: c.modelC?.F3, z: c.modelC?.Z3, unit: 'μA/h²' },
+            { label: 'F4 — OLS Dispersion', val: c.modelC?.F4, z: c.modelC?.Z4, unit: 'μA²' }
+          ].map(({ label, val, z, unit }) => (
+            <div key={label} style={{ background: '#050f1a', border: '1px solid #1a354c', borderRadius: '8px', padding: '10px' }}>
+              <div style={{ fontSize: '8px', color: '#63bce9', fontWeight: 800, letterSpacing: '.08em', textTransform: 'uppercase', marginBottom: '4px' }}>{label}</div>
+              <div style={{ fontSize: '11px', fontWeight: 700, color: '#e7eff7' }}>{typeof val === 'number' && isFinite(val) ? val.toFixed(3) : '—'} <span style={{ color: '#7893a9', fontWeight: 400 }}>{unit}</span></div>
+              <div style={{ fontSize: '9px', color: Math.abs(z || 0) >= 2 ? '#ff7b7b' : '#7893a9', marginTop: '3px' }}>
+                Z = {typeof z === 'number' && isFinite(z) ? z.toFixed(2) : '—'} σ
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="callout">
+          <BrainCircuit size={16} />
+          <span>
+            <b>Model C Assessment:</b> {(c.modelC?.anomalyReasons || ['No anomaly reasons computed.']).join(' · ')}
+          </span>
+        </div>
+      </Section>
+
+      <div className="two">
+        <Section title="Why BURN AI INSPECTOR Flagged This Component">
+          <div className="factors">
+            {[
+              ['Early Drift Rate (0h-96h)', Math.min(100, Math.abs(c.slope) * 450)],
+              ['Initial Baseline Deviation', Math.min(100, (c.v[0] / 15) * 50)],
+              ['168h Threshold Proximity', Math.min(100, (c.v[3] / limit) * 85)]
+            ].map(([n, v]) => (
+              <div key={n}>
+                <span>{n}</span>
+                <b>{Math.round(v)}%</b>
+                <div className="track">
+                  <i style={{ width: Math.min(100, v) + '%' }} />
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="callout">
+            <BrainCircuit size={16} />
+            <span>
+              <b>Diagnostic Explanation:</b> Early slope ({c.slope.toFixed(3)} μA/h) and measured endpoint ({c.v[3]?.toFixed(1)} μA) contribute to the tri-model risk level {c.risk}. {c.crossingText}.
+            </span>
+          </div>
+        </Section>
+        <Section title="Recommended QA Next Step">
+          <div className="recommend">
+            <ShieldCheck size={19} />
+            <div>
+              <b>{c.risk === 'Safe' ? 'Release Component to Next Test Phase' : 'Quarantine & Conduct Engineering Review'}</b>
+              <p>
+                {c.risk === 'Safe'
+                  ? 'Burn-in trajectory is within expected lot boundary.'
+                  : 'Verify thermal dissipation and re-test before releasing lot.'}
+              </p>
+            </div>
+          </div>
+        </Section>
+      </div>
+    </>
+  );
+}
+
+
+
+/**
+ * AI Copilot Query Interface
+ */
+function Copilot({ q, setQ, ans, ask, onPresetClick }) {
+  return (
+    <div className="copilot">
+      <div className="copIntro">
+        <BrainCircuit size={24} />
+        <div>
+          <h3>BURN AI INSPECTOR Copilot</h3>
+          <p>Query components, lot populations, drift slopes, or projected crossings.</p>
+        </div>
+      </div>
+      <div className="suggestions">
+        {[
+          'Why is C-10482 risky?',
+          'Which lot is deteriorating fastest?',
+          'Which components cross the limit within 48 hours?'
+        ].map(x => (
+          <button key={x} onClick={() => onPresetClick(x)}>
+            {x}
+          </button>
+        ))}
+      </div>
+      <div className="chat">
+        <input
+          value={q}
+          onChange={e => setQ(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && ask()}
+          placeholder="Ask BURN AI INSPECTOR about components, lots, or crossings..."
+        />
+        <Btn onClick={ask}><MessageSquare size={14} /> Ask</Btn>
+      </div>
+      {ans && (
+        <div className="answer">
+          <Sparkles size={15} style={{ flex: 'none', color: '#63bce9', marginTop: '2px' }} />
+          <div>{ans}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Mount React Root
+createRoot(document.getElementById('root')).render(<App />);

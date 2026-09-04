@@ -2,7 +2,7 @@
 
 .modelSwitch{display:flex;gap:6px;border:1px solid #23445c;background:#081827;padding:4px;border-radius:8px}
 .modelSwitch button{border:1px solid transparent;background:transparent;color:#7691a6;padding:8px 10px;border-radius:6px;text-align:left;min-width:150px;cursor:pointer}
-.modelSwitch button.on{background:#153c58;border-color:#2d6382;color:#edf8ff}
+.modelSwitch button.on{background:#154060;border-color:#48a0d0;color:#ffffff;box-shadow:0 0 8px rgba(99,188,233,0.3)}
 .modelSwitch b,.modelSwitch span{display:block}.modelSwitch b{font-size:8px}.modelSwitch span{font-size:7px;margin-top:3px;opacity:.8}
 .modelGrid{display:grid;grid-template-columns:1fr 1fr;gap:13px;margin-bottom:13px}
 .modelCard{border:1px solid #1b344b;background:#091b2a;border-radius:10px;padding:18px;position:relative}
@@ -19,3 +19,63 @@
 
 .riskOverview{display:grid;grid-template-columns:1.15fr .85fr;gap:13px;margin-bottom:13px}.riskPieArea{display:flex;align-items:center;justify-content:center;gap:28px;min-height:230px}.riskDonut{position:relative;width:220px;height:220px;flex:0 0 220px}.riskDonutCenter{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none}.riskDonutCenter b{font-size:30px;line-height:1}.riskDonutCenter span{font-size:8px;color:#71899f;margin-top:5px}.riskLegend{display:flex;flex-direction:column;gap:11px;min-width:145px}.riskLegend>div{display:grid;grid-template-columns:9px 1fr auto auto;gap:8px;align-items:center;font-size:10px}.riskLegend>div>span{width:8px;height:8px;border-radius:50%}.riskLegend strong{font-size:12px}.riskLegend small{font-size:8px;color:#71899f;min-width:28px;text-align:right}.riskDistribution,.riskRules{padding:18px}.riskTitle{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px}.riskTitle h2{margin:0}.riskTitle>strong{font-size:28px;text-align:right}.riskTitle>strong small{display:block;font-size:8px;color:#71899f;font-weight:500}.riskBar{margin:16px 0}.riskBarHead{display:flex;justify-content:space-between;align-items:center;font-size:9px;margin-bottom:7px}.riskBarHead strong{font-size:12px}.riskTrack{height:10px;border:1px solid #1c3850;background:#071725;border-radius:20px;overflow:hidden}.riskTrack span{display:block;height:100%;border-radius:20px}.riskTrack span.safe{background:#286149}.riskTrack span.watch{background:#655a2b}.riskTrack span.high{background:#68442e}.riskTrack span.critical{background:#683838}.riskRules h2{margin-bottom:3px}.riskModel{display:grid;grid-template-columns:65px 1fr 55px;gap:10px;align-items:center;border:1px solid #19344a;background:#091b2a;border-radius:8px;padding:12px;margin:10px 0}.riskModel>span{font-size:8px;color:#63bce9;font-weight:800}.riskModel b{display:block;font-size:10px}.riskModel small{display:block;font-size:7px;color:#71899f;line-height:1.4;margin-top:3px}.riskModel>strong{text-align:right;font-size:21px}.riskRuleList{margin-top:13px;padding-top:3px;border-top:1px solid #19344a}.riskModels{margin-bottom:13px}.riskModels .decisionCard small{display:block;font-size:8px;color:#71899f;font-weight:500;margin-top:4px}.riskMore{margin-top:12px}.riskBar .safe{color:#69dda2}.riskBar .watch{color:#e7d173}.riskBar .high{color:#ffab7b}.riskBar .critical{color:#ff8181}
 @media(max-width:900px){.riskOverview{grid-template-columns:1fr}.riskPieArea{gap:16px}}@media(max-width:600px){.riskPieArea{flex-direction:column}.riskLegend{width:100%}}@media(max-width:720px){.riskModel{grid-template-columns:55px 1fr 45px}.riskModels{grid-template-columns:1fr}}
+
+/* Collapsible Grouped Sidebar Styles */
+.navContainer{overflow-y:auto;flex:1;padding-right:2px;margin:2px 0 10px;display:flex;flex-direction:column;gap:2px}
+.navContainer::-webkit-scrollbar{width:3px}
+.navContainer::-webkit-scrollbar-thumb{background:#1a364e;border-radius:4px}
+.navGroup{margin:3px 0}
+.navGroupHeader{width:100%;background:none;border:none;color:#5c7891;display:flex;justify-content:space-between;align-items:center;padding:7px 8px 5px;font-size:8px;font-weight:800;letter-spacing:.11em;text-transform:uppercase;cursor:pointer;border-radius:6px;transition:color .12s ease}
+.navGroupHeader:hover{color:#8ea9be}
+.navGroupHeader.groupActive{color:#68c7f2}
+.navGroupHeader svg{color:#48657e;transition:transform .12s ease}
+.navGroupItems{padding-left:6px;border-left:1px solid #162c40;margin:2px 0 4px 8px;display:flex;flex-direction:column;gap:2px}
+.navGroupItems .nav{margin:0;padding:7px 8px;font-size:9.5px}
+
+/* Poster-Aligned Workflow Stepper Styles */
+.workflowPipeline{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+.workflowStep{border:1px solid #1c3850;background:#091a2ae0;border-radius:9px;padding:12px 14px;position:relative;transition:all .15s ease}
+.workflowStep:hover{border-color:#346182;background:#0d2338}
+.workflowStep span{display:block;font-size:7.5px;font-weight:800;letter-spacing:.12em;color:#63bce9;text-transform:uppercase}
+.workflowStep b{display:block;font-size:12px;margin:5px 0 2px;color:#e7eff7}
+.workflowStep small{display:block;font-size:8px;color:#7893a9}
+@media(max-width:900px){.workflowPipeline{grid-template-columns:1fr 1fr}}
+@media(max-width:500px){.workflowPipeline{grid-template-columns:1fr}}
+
+/* Intended Outcomes / Target Benefits */
+.targetBenefits{display:grid;grid-template-columns:repeat(4,1fr);gap:11px;margin-top:13px}
+.targetBenefitCard{border:1px solid #1a354c;background:#081827e8;border-radius:10px;padding:14px}
+.targetBenefitCard span{display:block;font-size:7.5px;font-weight:800;letter-spacing:.11em;color:#63bce9;text-transform:uppercase}
+.targetBenefitCard h4{font-size:11px;margin:5px 0 4px;color:#e7eff7}
+.targetBenefitCard p{font-size:8.5px;line-height:1.5;color:#7893a9;margin:0}
+@media(max-width:900px){.targetBenefits{grid-template-columns:1fr 1fr}}
+
+@media(max-width:500px){.targetBenefits{grid-template-columns:1fr}}
+/* 3D POP-OUT EFFECT — Risk & Safety donut */
+.riskDonut {
+    position: relative;
+    transform: none;
+    filter: none;
+}
+
+.riskDonut3D {
+    transform: perspective(900px)
+        rotateX(10deg)
+        rotateY(-4deg)
+        translateZ(30px);
+
+    transform-style: preserve-3d;
+
+    filter:
+        drop-shadow(0 14px 0 rgba(0, 0, 0, 0.20))
+        drop-shadow(0 22px 18px rgba(0, 0, 0, 0.45));
+}
+.riskDonutCenter {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 10;
+    text-align: center;
+    pointer-events: none;
+}
