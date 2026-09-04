@@ -74,7 +74,15 @@ const SEED_DATA = [
   { id: 'C-11408', lot: 'L-104', v: [11.1, 11.9, 17.2, 32.8], reason: 'Normal', confidence: 93 },
   { id: 'C-11931', lot: 'L-102', v: [12.0, 14.1, 19.2, 35.5], reason: 'Lot deviation', confidence: 89 }
 ];
+const INITIAL_DATASET = Array.from({ length: 10000 }, (_, i) => {
+  const base = SEED_DATA[i % SEED_DATA.length];
 
+  return {
+    ...base,
+    id: `C-${String(i + 1).padStart(5, '0')}`,
+    lot: `L-${101 + i}`,
+  };
+});
 const RANK = { Critical: 4, High: 3, Watch: 2, Safe: 1 };
 
 const MODEL_A = {
@@ -583,10 +591,10 @@ function Table({ rows, open, pageSize = 20 }) {
 
 function App() {
   const [page, setPage] = useState('home');
-  const [rawDataset, setRawDataset] = useState(SEED_DATA);
-  const [sel, setSel] = useState('C-10482');
+  const [rawDataset, setRawDataset] = useState(INITIAL_DATASET);
 
   const [componentSearch, setComponentSearch] = useState('');
+  const [sel, setSel] = useState('');
 const [showComponentResults, setShowComponentResults] = useState(false);
   const [limit, setLimit] = useState(50);
   const [sens, setSens] = useState(0.5);
@@ -695,18 +703,9 @@ useEffect(() => {
     return computedCs.find(x => x.id === sel) || computedCs[0];
   }, [computedCs, sel]);
 
-  const componentSearchResults = useMemo(() => {
-  const term = componentSearch.trim().toLowerCase();
-
-  if (!term) return [];
-
-  return computedCs
-    .filter(x =>
-      x.id.toLowerCase().includes(term) ||
-      x.lot.toLowerCase().includes(term)
-    )
-    .slice(0, 8);
-}, [computedCs, componentSearch]);
+const componentSearchResults = useMemo(() => {
+    return computedCs;
+}, [computedCs]);
 
   // Global counts and metrics
   const stats = useMemo(() => {
@@ -1216,6 +1215,7 @@ function Page(props) {
     risky,
     cs,
     c,
+    sel,
     setSel,
     limit,
     setLimit,
@@ -1427,47 +1427,60 @@ componentSearchResults
     <div style={{ position: 'relative' }}>
   <small style={{ color: '#71899f' }}>SELECT COMPONENT</small>
 
-  <input
-    type="text"
-    value={componentSearch}
-   placeholder="Search component or lot..."
+ <select
+    value={sel}
     onChange={(e) => {
-      setComponentSearch(e.target.value);
-      setShowComponentResults(true);
-    }}
-    onFocus={() => {
-  if (!componentSearch.trim() && c?.id) {
-    setComponentSearch(c.id);
-  }
-  setShowComponentResults(true);
-}}
-    style={{
-      display: 'block',
-      marginTop: '6px',
-      width: '100%',
-      boxSizing: 'border-box',
-      padding: '8px 10px',
-      borderRadius: '6px',
-      border: '1px solid #2a465e',
-      background: '#091b2b',
-      color: '#d9f3ff',
-      fontWeight: 700,
-      outline: 'none'
-    }}
-  />
+        const id = e.target.value;
 
-  {showComponentResults && componentSearch.trim() && (
+        setSel(id);
+        setComponentSearch(id);
+        setShowComponentResults(false);
+        setLiveStage(0);
+        setLiveTick(0);
+        setLiveMonitoring(false);
+    }}
+    style={{
+        display: 'block',
+        width: '100%',
+        boxSizing: 'border-box',
+        padding: '12px 14px',
+        borderRadius: '6px',
+        border: '1px solid #2a465e',
+        background: '#091b2b',
+        color: '#d9f3ff',
+        fontWeight: 700,
+        outline: 'none',
+        cursor: 'pointer',
+        fontSize: '14px'
+    }}
+>
+    <option value="" disabled>
+        Select component...
+    </option>
+
+    {cs.map((component) => (
+        <option
+            key={component.id}
+            value={component.id}
+        >
+            {component.id} — {component.lot}
+        </option>
+    ))}
+</select>
+
+  {showComponentResults ? (
     <div
       style={{
         position: 'absolute',
         left: 0,
         right: 0,
         top: '58px',
-        zIndex: 20,
+        zIndex: 1000,
         background: '#071827',
         border: '1px solid #2a465e',
         borderRadius: '7px',
-        overflow: 'hidden',
+        maxHeight: '360px',
+overflowY: 'auto',
         boxShadow: '0 10px 25px rgba(0,0,0,0.35)'
       }}
     >
@@ -1514,7 +1527,7 @@ onClick={() => {
         </div>
       )}
     </div>
-  )}
+  ): null}
 </div>
 
     <div>
@@ -2817,7 +2830,7 @@ function PredictionView({ cs, c, limit, model, setModel, setSel }) {
           <>
             <ModelSwitch model={model} setModel={setModel} />
             <select value={c.id} onChange={e => setSel(e.target.value)}>
-              {cs.slice(0, 200).map(x => (
+              {cs.map(x => (
                 <option key={x.id} value={x.id}>
                   {x.id} · Lot {x.lot} ({x.risk})
                 </option>
