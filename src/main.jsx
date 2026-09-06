@@ -2023,7 +2023,7 @@ const densityAnomalous = makeDensityBins(scatterAnomalous);
             <div className="caseGrid">
               {[...anomalous]
                 .sort((a, b) => b.modelC.anomalyScore - a.modelC.anomalyScore)
-                .slice(0, 12)
+                
                 .map(item => {
                   const mc = item.modelC;
                   const topReason = mc.anomalyReasons[0] || '—';
@@ -2314,7 +2314,7 @@ const densityAnomalous = makeDensityBins(scatterAnomalous);
           text="Close the loop with recommended QA steps, quarantine triggers, and explicit human sign-off."
         />
         <div className="actions">
-          {risky.slice(0, 8).map(item => (
+          {risky.map(item => (
             <div className={review[item.id] ? 'done' : ''} key={item.id}>
               <div>
                 {badge(item.risk)} <b>{item.id}</b> <span>{item.lot}</span>
