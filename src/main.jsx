@@ -2251,7 +2251,7 @@ const densityAnomalous = makeDensityBins(scatterAnomalous);
 
         <Section title="Priority Flagged Components" sub="Components requiring QA inspection based on unified risk gate">
           <div className="caseGrid">
-            {risky.slice(0, 8).map(x => (
+            {risky.map(x => (
               <div className="caseCard" key={x.id} onClick={() => go('inspector', x.id)}>
                 <b>{x.id}</b>
                 <span>{x.lot}</span>
@@ -2645,7 +2645,7 @@ const validationStatus = cs.length > 0
         </div>
         <Section title="Top Priority Inspection Cases" sub="Components flagged by Model A hard threshold gate or Model B early drift forecast">
           <div className="caseGrid">
-            {risky.slice(0, 8).map(x => (
+            {risky.map(x => (
               <div className="caseCard" key={x.id} onClick={() => go('inspector', x.id)}>
                 <b>{x.id}</b>
                 <span>{x.lot}</span>
