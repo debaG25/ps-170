@@ -86,7 +86,7 @@ const INITIAL_DATASET = Array.from({ length: 10000 }, (_, i) => {
   return {
     ...base,
     id: `C-${String(i + 1).padStart(5, '0')}`,
-    lot: `L-${101 + i}`,
+    lot: `L-${String(101 + Math.floor(i / 100)).padStart(3, '0')}`,
   };
 });
 const RANK = { Critical: 4, High: 3, Watch: 2, Safe: 1 };
