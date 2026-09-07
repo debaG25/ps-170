@@ -79,3 +79,371 @@
     text-align: center;
     pointer-events: none;
 }
+/* =========================================================
+   BURN AI INSPECTOR — LANDING PAGE
+   ========================================================= */
+
+.landingPage {
+    min-height: 100vh;
+    width: 100%;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background:
+        radial-gradient(circle at 50% 35%, #102c45 0%, #081827 32%, #040c15 72%);
+    color: #e7eff7;
+}
+
+.landingPage::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image:
+        linear-gradient(rgba(74, 133, 169, 0.045) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(74, 133, 169, 0.045) 1px, transparent 1px);
+    background-size: 42px 42px;
+    mask-image: linear-gradient(to bottom, transparent, black 20%, black 80%, transparent);
+    pointer-events: none;
+}
+
+.landingContent {
+    position: relative;
+    z-index: 2;
+    width: min(900px, calc(100% - 40px));
+    text-align: center;
+    padding: 50px 20px;
+}
+
+.landingTeamName {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .35em;
+    color: #6ec8ee;
+    margin-bottom: 28px;
+    animation: landingFadeDown .8s ease both;
+}
+
+.landingTitle {
+    font-size: clamp(38px, 6vw, 72px);
+    line-height: 1;
+    font-weight: 800;
+    letter-spacing: -.045em;
+    color: #f2f8fc;
+    text-shadow: 0 0 35px rgba(91, 191, 233, .16);
+    animation: landingFadeUp .9s .15s ease both;
+}
+
+.landingSubtitle {
+    margin-top: 18px;
+    font-size: clamp(13px, 1.8vw, 18px);
+    line-height: 1.55;
+    font-weight: 600;
+    color: #8fc8e4;
+    letter-spacing: .02em;
+    animation: landingFadeUp .9s .3s ease both;
+}
+
+.landingDescription {
+    max-width: 690px;
+    margin: 24px auto 0;
+    color: #819aae;
+    font-size: 11px;
+    line-height: 1.8;
+    animation: landingFadeUp .9s .45s ease both;
+}
+
+.landingEnter {
+    margin-top: 30px;
+    border: 1px solid #3d7898;
+    background: linear-gradient(135deg, #154564, #0c2b43);
+    color: #effaff;
+    border-radius: 8px;
+    padding: 13px 20px;
+    min-width: 190px;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .08em;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    box-shadow:
+        0 0 0 1px rgba(91, 191, 233, .05) inset,
+        0 8px 30px rgba(0, 0, 0, .25);
+    transition:
+        transform .2s ease,
+        border-color .2s ease,
+        box-shadow .2s ease,
+        background .2s ease;
+    animation: landingFadeUp .9s .6s ease both;
+}
+
+.landingEnter span {
+    font-size: 15px;
+    transition: transform .2s ease;
+}
+
+.landingEnter:hover {
+    transform: translateY(-2px);
+    border-color: #65c7ed;
+    background: linear-gradient(135deg, #1b5274, #103851);
+    box-shadow:
+        0 0 22px rgba(91, 191, 233, .16),
+        0 12px 35px rgba(0, 0, 0, .3);
+}
+
+.landingEnter:hover span {
+    transform: translateX(4px);
+}
+
+.landingInfo {
+    margin-top: 42px;
+    animation: landingFadeUp .9s .75s ease both;
+}
+
+.landingPS {
+    display: flex;
+    justify-content: center;
+    gap: 22px;
+    color: #617f96;
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: .14em;
+}
+
+.landingDivider {
+    width: 180px;
+    height: 1px;
+    margin: 15px auto;
+    background: linear-gradient(
+        90deg,
+        transparent,
+        #28485f,
+        transparent
+    );
+}
+
+.landingMembersTitle {
+    font-size: 8px;
+    color: #5f7d94;
+    font-weight: 800;
+    letter-spacing: .18em;
+    margin-bottom: 13px;
+}
+
+.landingMembers {
+    max-width: 650px;
+    margin: auto;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px 18px;
+}
+
+.landingMembers span {
+    color: #9db2c2;
+    font-size: 9px;
+    padding: 5px 4px;
+    border-radius: 5px;
+    transition: color .2s ease, background .2s ease;
+}
+
+.landingMembers span:hover {
+    color: #dff5ff;
+    background: rgba(31, 76, 103, .3);
+}
+
+.landingGlow {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(70px);
+    pointer-events: none;
+    opacity: .25;
+}
+
+.landingGlowOne {
+    width: 280px;
+    height: 280px;
+    top: -120px;
+    right: 8%;
+    background: #155070;
+    animation: landingFloatOne 7s ease-in-out infinite;
+}
+
+.landingGlowTwo {
+    width: 240px;
+    height: 240px;
+    bottom: -120px;
+    left: 8%;
+    background: #123c56;
+    animation: landingFloatTwo 9s ease-in-out infinite;
+}
+
+@keyframes landingFadeDown {
+    from {
+        opacity: 0;
+        transform: translateY(-18px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes landingFadeUp {
+    from {
+        opacity: 0;
+        transform: translateY(18px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes landingFloatOne {
+    0%, 100% {
+        transform: translate(0, 0);
+    }
+    50% {
+        transform: translate(-30px, 25px);
+    }
+}
+
+@keyframes landingFloatTwo {
+    0%, 100% {
+        transform: translate(0, 0);
+    }
+    50% {
+        transform: translate(25px, -20px);
+    }
+}
+
+@media (max-width: 650px) {
+    .landingContent {
+        width: calc(100% - 24px);
+        padding: 35px 8px;
+    }
+
+    .landingDescription {
+        font-size: 10px;
+    }
+
+    .landingMembers {
+        grid-template-columns: 1fr 1fr;
+        gap: 6px 10px;
+    }
+
+    .landingPS {
+        gap: 14px;
+    }
+}
+
+@media (max-width: 420px) {
+    .landingMembers {
+        grid-template-columns: 1fr;
+    }
+
+    .landingTitle {
+        font-size: 36px;
+    }
+}
+/* ===== FULL SCREEN LANDING PAGE ===== */
+
+html,
+body,
+#root {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+}
+
+.landingPage {
+    width: 100vw;
+    height: 100vh;
+    min-height: 100vh;
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    overflow: hidden;
+}
+
+.landingContent {
+    width: 100%;
+    max-width: 1200px;
+    box-sizing: border-box;
+    text-align: center;
+}
+/* ===== LANDING PAGE FONT SIZE ===== */
+
+.landingTeamName {
+    font-size: 20px;
+}
+
+.landingTitle {
+    font-size: clamp(65px, 6.5vw, 105px);
+}
+
+.landingSubtitle {
+    font-size: clamp(24px, 2.2vw, 34px);
+}
+
+.landingDescription {
+    font-size: 18px;
+    line-height: 1.8;
+}
+
+.landingEnter {
+    font-size: 16px;
+    padding: 20px 36px;
+}
+
+.landingPS {
+    font-size: 15px;
+}
+
+.landingMembersTitle {
+    font-size: 14px;
+}
+
+.landingMembers {
+    font-size: 16px;
+}
+/* Risk metric number colors */
+.stat.safe strong {
+  color: #22c55e;
+}
+
+.stat.watch strong {
+  color: #facc15;
+}
+
+.stat.danger strong {
+  color: #ef4444;
+}
+/* Fix Recharts hover tooltip readability */
+.recharts-default-tooltip {
+  background-color: #0a1c2d !important;
+  border: 1px solid #2a465e !important;
+  border-radius: 6px !important;
+  color: #ffffff !important;
+}
+
+.recharts-default-tooltip .recharts-tooltip-label {
+  color: #ffffff !important;
+}
+
+.recharts-default-tooltip .recharts-tooltip-item {
+  color: #ffffff !important;
+}
+
+.recharts-default-tooltip .recharts-tooltip-item-list {
+  color: #ffffff !important;
+}

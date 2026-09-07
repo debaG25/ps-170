@@ -33,6 +33,12 @@ import {
   X,
   Zap
 } from 'lucide-react';
+function getRiskColor(risk) {
+    if (risk === 'Critical') return '#ef4444';
+    if (risk === 'High') return '#f97316';
+    if (risk === 'Watch') return '#facc15';
+    return '#22c55e';
+}
 import {
   ResponsiveContainer,
   LineChart,
@@ -44,12 +50,12 @@ import {
   ReferenceLine,
   BarChart,
   Bar,
+  Cell,
   ScatterChart,
   Scatter,
   ZAxis,
   PieChart,
-  Pie,
-  Cell
+  Pie
 } from 'recharts';
 import './styles.css';
 
@@ -588,8 +594,73 @@ function Table({ rows, open, pageSize = 20 }) {
 }
 
 // --- MAIN APPLICATION COMPONENT ---
+// LANDING PAGE
+function LandingPage({ onEnter }) {
+  return (
+    <div className="landingPage">
+      <div className="landingGlow landingGlowOne" />
+      <div className="landingGlow landingGlowTwo" />
+
+      <div className="landingContent">
+
+        <div className="landingTeamName">
+          NEXGENX
+        </div>
+
+        <div className="landingTitle">
+          BURN AI INSPECTOR
+        </div>
+
+        <div className="landingSubtitle">
+          AI-Driven Anomaly Detection
+          <br />
+          in Component Burn-In & Screening
+        </div>
+
+        <p className="landingDescription">
+          An intelligent burn-in screening platform that analyzes component
+          behaviour over time to detect anomalies, predict drift, and identify
+          potential latent defects before they become critical failures.
+        </p>
+
+        <button
+          className="landingEnter"
+          onClick={onEnter}
+        >
+          ENTER INSPECTOR
+          <span>→</span>
+        </button>
+
+        <div className="landingInfo">
+          <div className="landingPS">
+            <span>SIH 2026</span>
+            <span>PS 26170</span>
+          </div>
+
+          <div className="landingDivider" />
+
+          <div className="landingMembersTitle">
+            TEAM MEMBERS
+          </div>
+
+          <div className="landingMembers">
+            <span>Sarika Misra</span>
+            <span>Debargha Ghosh</span>
+            <span>Soham Barapanda</span>
+            <span>Sagnik Mukhopadhaya</span>
+            <span>Urnavo Chowdhury</span>
+            <span>Reek Bhowmick</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
 
 function App() {
+  const [showLanding, setShowLanding] = useState(true);
   const [page, setPage] = useState('home');
   const [rawDataset, setRawDataset] = useState(INITIAL_DATASET);
 
@@ -923,8 +994,16 @@ const componentSearchResults = useMemo(() => {
     return 'Command Center';
   };
 
+ if (showLanding) {
   return (
-    <div className="app">
+    <LandingPage
+      onEnter={() => setShowLanding(false)}
+    />
+  );
+}
+
+return (
+  <div className="app">
       <aside>
         <div className="brand">
           <div className="logo"><Sparkles size={17} /></div>
@@ -1784,7 +1863,7 @@ onClick={() => {
         <div className="stats">
           <Stat I={Layers3} label="Selected Lot" value={currentLot || 'None'} sub={`${lotItems.length} components`} />
           <Stat I={Gauge} label="0h Baseline Mean" value={`${lotBase} μA`} sub="Lot initial mean" />
-          <Stat I={ShieldCheck} label="Lot Health" value={`${lotHealth}%`} sub="Reliability score" tone="safe" />
+          <Stat I={ShieldCheck} label="Lot Health" value={`${lotHealth}%`} sub="Reliability score" tone={lotHealth >= 80 ? 'safe' : lotHealth >= 50 ? 'watch' : 'danger'} />
           <Stat I={AlertTriangle} label="Attention Required" value={flaggedCount} sub="Non-safe components" tone={flaggedCount ? 'watch' : 'safe'} />
         </div>
         <div className="two">
@@ -1795,8 +1874,43 @@ onClick={() => {
                   <CartesianGrid strokeDasharray="3 3" stroke="#17314a" />
                   <XAxis dataKey="b" />
                   <YAxis allowDecimals={false} />
-                  <Tooltip contentStyle={{ background: '#0a1c2d', borderColor: '#2a465e' }} />
-                  <Bar dataKey="n" fill="#5bbfe9" radius={[4, 4, 0, 0]} />
+                  <Tooltip
+  cursor={{ fill: 'rgba(255,255,255,0.08)' }}
+  contentStyle={{
+    backgroundColor: '#111827',
+    border: '2px solid #5bbfe9',
+    borderRadius: '10px',
+    padding: '10px 14px',
+    boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+    color: '#ffffff'
+  }}
+  labelStyle={{
+    color: '#ffffff',
+    fontWeight: '700',
+    marginBottom: '6px'
+  }}
+  itemStyle={{
+    color: '#ffffff',
+    fontWeight: '600'
+  }}
+  formatter={(value) => [`${value} components`, 'Count']}
+  labelFormatter={(label) => `Leakage: ${label} µA`}
+/>
+                 <Bar dataKey="n" radius={[4, 4, 0, 0]}>
+  {dist.map((entry, index) => {
+    const low = index * binSize;
+
+    let color = '#22c55e'; // GREEN = Safe
+
+    if (low >= limit * 1.25) {
+      color = '#ef4444'; // RED = Critical
+    } else if (low >= limit) {
+      color = '#facc15'; // YELLOW = Watch
+    }
+
+    return <Cell key={`cell-${index}`} fill={color} />;
+  })}
+</Bar>
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -2381,14 +2495,47 @@ const densityAnomalous = makeDensityBins(scatterAnomalous);
           title="Explore Physical Trajectory Sensitivity."
           text="Simulate how accelerated drift factors affect the physical 168h burn-in endpoint."
           actions={
-            <div className="tabs">
-              {['0.75× Drift', 'Baseline (1.0×)', '1.2× Drift', '1.5× Drift'].map((x, i) => (
-                <button className={scenario === i ? 'on' : ''} onClick={() => setScenario(i)} key={x}>
-                  {x}
-                </button>
-              ))}
-            </div>
-          }
+  <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+
+    {/* Component selector */}
+    <select
+      value={sel || (cs[0]?.id || '')}
+      onChange={(e) => setSel(e.target.value)}
+      style={{
+        minWidth: '220px',
+        maxWidth: '280px',
+        padding: '9px 12px',
+        borderRadius: '8px',
+        border: '1px solid #29465f',
+        background: '#0b1c2b',
+        color: '#ffffff',
+        fontWeight: '600',
+        outline: 'none',
+        cursor: 'pointer'
+      }}
+    >
+      {cs.map((component) => (
+        <option key={component.id} value={component.id}>
+          {component.id} — {component.lot}
+        </option>
+      ))}
+    </select>
+
+    {/* Scenario selector */}
+    <div className="tabs">
+      {['0.75× Drift', 'Baseline (1.0×)', '1.2× Drift', '1.5× Drift'].map((x, i) => (
+        <button
+          className={scenario === i ? 'on' : ''}
+          onClick={() => setScenario(i)}
+          key={x}
+        >
+          {x}
+        </button>
+      ))}
+    </div>
+
+  </div>
+}
         />
         <div className="stats">
           <Stat I={Target} label="Simulated Case" value={c.id} sub={c.lot} />
@@ -2414,7 +2561,22 @@ const densityAnomalous = makeDensityBins(scatterAnomalous);
                 <CartesianGrid strokeDasharray="3 3" stroke="#17314a" />
                 <XAxis dataKey="h" />
                 <YAxis unit=" μA" />
-                <Tooltip contentStyle={{ background: '#0a1c2d', borderColor: '#2a465e' }} />
+                <Tooltip
+  contentStyle={{
+    backgroundColor: '#061522',
+    border: '1px solid #2a465e',
+    borderRadius: '8px',
+    color: '#ffffff',
+    boxShadow: '0 6px 18px rgba(0,0,0,0.45)'
+  }}
+  labelStyle={{
+    color: '#ffffff',
+    fontWeight: '600'
+  }}
+  itemStyle={{
+    color: '#ffffff'
+  }}
+/>
                 <ReferenceLine y={limit} stroke="#ff7b7b" strokeDasharray="5 5" label={`Limit (${limit} μA)`} />
                 <Line dataKey="base" name="Observed Measurements" stroke="#5bbfe9" strokeWidth={2} dot={{ r: 4 }} />
                 <Line dataKey="scenario" name="Simulated Trajectory" stroke="#f3a06f" strokeWidth={3} strokeDasharray="6 6" dot={{ r: 5 }} />
@@ -2748,7 +2910,7 @@ function InspectorChart({ c, limit }) {
   if (!c || !c.v) return <div className="sub">No component data available.</div>;
 
   const f = linearForecast(c.v, limit);
-
+ const riskColor = getRiskColor(c.risk);
   const data = [
     { h: '0h', hours: 0, measured: c.v[0], forecast: undefined },
     { h: '24h', hours: 24, measured: c.v[1], forecast: undefined },
@@ -2764,14 +2926,27 @@ function InspectorChart({ c, limit }) {
           <CartesianGrid strokeDasharray="3 3" stroke="#17314a" />
           <XAxis dataKey="h" />
           <YAxis unit=" μA" />
-          <Tooltip contentStyle={{ background: '#0a1c2d', borderColor: '#2a465e' }} />
+          <Tooltip
+  contentStyle={{
+    backgroundColor: '#0a1c2d',
+    border: '1px solid #2a465e',
+    borderRadius: '6px',
+    color: '#ffffff'
+  }}
+  labelStyle={{
+    color: '#ffffff'
+  }}
+  itemStyle={{
+    color: '#ffffff'
+  }}
+/>
           <ReferenceLine y={limit} stroke="#ff7b7b" strokeDasharray="5 5" label={`Limit (${limit} μA)`} />
           <Line
             dataKey="measured"
             name="Measured Burn-In Data"
-            stroke="#5bbfe9"
+            stroke={riskColor}
             strokeWidth={3}
-            dot={{ r: 5, fill: '#5bbfe9' }}
+            dot={{ r: 5, fill: riskColor }}
             connectNulls={false}
           />
           <Line
