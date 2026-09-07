@@ -460,8 +460,8 @@ body,
     position: absolute;
     top: 25px;
     left: 35px;
-    width: 125px;
-    height: 125px;
+    width: 180px;
+    height: 180px;
     object-fit: contain;
     z-index: 10;
 }
