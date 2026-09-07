@@ -598,17 +598,19 @@ function Table({ rows, open, pageSize = 20 }) {
 function LandingPage({ onEnter }) {
   return (
     <div className="landingPage">
+      <img
+  src="/nexgenx-logo.jpeg.jpeg"
+  alt="NexGenX Logo"
+  className="landingLogo"
+/>
       <div className="landingGlow landingGlowOne" />
       <div className="landingGlow landingGlowTwo" />
 
       <div className="landingContent">
 
-        <div className="landingTeamName">
-          NEXGENX
-        </div>
-
         <div className="landingTitle">
           BURN AI INSPECTOR
+<p className="presented-by">Presented by NexGenX</p>
         </div>
 
         <div className="landingSubtitle">
