@@ -1,4 +1,4 @@
-const mongoose = require("mongoose");
+import mongoose from "mongoose";
 
 const MONGODB_URI = process.env.MONGODB_URI;
 
@@ -25,10 +25,14 @@ async function connectDB() {
     return;
   }
 
+  if (!MONGODB_URI) {
+    throw new Error("MONGODB_URI environment variable is not set");
+  }
+
   await mongoose.connect(MONGODB_URI);
 }
 
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   try {
     await connectDB();
 
@@ -69,4 +73,4 @@ module.exports = async function handler(req, res) {
       error: error.message
     });
   }
-};
+}
