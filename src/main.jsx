@@ -662,7 +662,7 @@ function LandingPage({ onEnter }) {
 const uploadComponentsToBackend = async (components) => {
   console.log("DATA BEING SENT TO BACKEND:", components);
   try {
-    const response = await fetch("/api/components/bulk", {
+    const response = await fetch("/api/components", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
