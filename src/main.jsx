@@ -662,7 +662,7 @@ function LandingPage({ onEnter }) {
 const uploadComponentsToBackend = async (components) => {
   console.log("DATA BEING SENT TO BACKEND:", components);
   try {
-    const response = await fetch("http://localhost:5000/api/components/bulk", {
+    const response = await fetch("/api/components/bulk", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -753,7 +753,7 @@ useEffect(() => {
 useEffect(() => {
   const loadComponentsFromBackend = async () => {
     try {
-      const response = await fetch('http://localhost:5000/api/components');
+      const response = await fetch('/api/components');
 
       if (!response.ok) {
         throw new Error(`Backend returned ${response.status}`);
