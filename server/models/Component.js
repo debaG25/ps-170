@@ -1,4 +1,4 @@
-const mongoose = require("mongoose");
+import mongoose from "mongoose";
 
 const componentSchema = new mongoose.Schema(
   {
@@ -17,7 +17,6 @@ const componentSchema = new mongoose.Schema(
     value96h: Number,
     value168h: Number,
 
-    // Keep the original component information if available
     risk: String,
     status: String,
   },
@@ -26,4 +25,8 @@ const componentSchema = new mongoose.Schema(
   }
 );
 
-module.exports = mongoose.model("Component", componentSchema);
+const Component =
+  mongoose.models.Component ||
+  mongoose.model("Component", componentSchema);
+
+export default Component;
