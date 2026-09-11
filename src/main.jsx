@@ -487,7 +487,7 @@ function Section({ title, sub, children, actions }) {
   );
 }
 
-function EmptyState({ title = 'No Data Loaded', message = 'Upload a CSV dataset or restore demo records.', onReset, onUpload }) {
+function EmptyState({ title = 'No Data Loaded', message = 'Upload a CSV dataset to begin.', onUpload }) {
   return (
     <div className="card emptyState" style={{ textAlign: 'center', padding: '48px 24px', margin: '20px 0' }}>
       <Database size={40} style={{ color: '#4a6d8c', marginBottom: '14px' }} />
@@ -495,7 +495,7 @@ function EmptyState({ title = 'No Data Loaded', message = 'Upload a CSV dataset 
       <p className="sub" style={{ maxWidth: '420px', margin: '0 auto 18px' }}>{message}</p>
       <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
         {onUpload && <Btn onClick={onUpload}><Upload size={14} /> Upload CSV</Btn>}
-        {onReset && <Btn secondary onClick={onReset}><RotateCcw size={14} /> Restore Demo Data</Btn>}
+        
       </div>
     </div>
   );
@@ -659,12 +659,49 @@ function LandingPage({ onEnter }) {
     </div>
   );
 }
+const uploadComponentsToBackend = async (components) => {
+  console.log("DATA BEING SENT TO BACKEND:", components);
+  try {
+    const response = await fetch("http://localhost:5000/api/components/bulk", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(
+  components.map(c => ({
+    id: c.id,
+    lot: c.lot,
+    value0h: Number(c.value0h ?? c.v?.[0]),
+    value24h: Number(c.value24h ?? c.v?.[1]),
+    value96h: Number(c.value96h ?? c.v?.[2]),
+    value168h: Number(c.value168h ?? c.v?.[3]),
+    reason: c.reason,
+    confidence: c.confidence
+  }))
+),
+    });
 
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || "Backend upload failed");
+    }
+
+    console.log("Backend upload successful:", data);
+
+    return data;
+  } catch (error) {
+    console.error("Backend upload failed:", error);
+    throw error;
+  }
+};
 
 function App() {
-  const [showLanding, setShowLanding] = useState(true);
+  const [showLanding, setShowLanding] = useState(() => {
+  return sessionStorage.getItem("inspectorEntered") !== "true";
+});
   const [page, setPage] = useState('home');
-  const [rawDataset, setRawDataset] = useState(INITIAL_DATASET);
+  const [rawDataset, setRawDataset] = useState([]);
 
   const [componentSearch, setComponentSearch] = useState('');
   const [sel, setSel] = useState('');
@@ -712,7 +749,55 @@ useEffect(() => {
 
   return () => clearInterval(timer);
 }, [liveMonitoring]);
+// Load components from MongoDB
+useEffect(() => {
+  const loadComponentsFromBackend = async () => {
+    try {
+      const response = await fetch('http://localhost:5000/api/components');
 
+      if (!response.ok) {
+        throw new Error(`Backend returned ${response.status}`);
+      }
+
+      const data = await response.json();
+
+    const mongoData = data.map(c => ({
+  id: c.id,
+  lot: c.lot,
+  v: [
+    Number(c.value0h),
+    Number(c.value24h),
+    Number(c.value96h),
+    Number(c.value168h)
+  ],
+  reason: c.reason || 'Imported burn-in record',
+  confidence: c.confidence || 95
+})).filter(c =>
+  c.id &&
+  c.lot &&
+  c.v.length === 4 &&
+  c.v.every(Number.isFinite)
+);
+
+if (mongoData.length > 0) {
+    setRawDataset(mongoData);
+    setSel(mongoData[0].id);
+    setSelectedLot(mongoData[0].lot);
+    console.log('Loaded from MongoDB:', mongoData);
+} else {
+    console.log('MongoDB contains no components. Starting with empty dataset.');
+    setRawDataset([]);
+    setSel(null);
+    setSelectedLot(null);
+}
+
+    } catch (error) {
+      console.error('Failed to load components from MongoDB:', error);
+    }
+  };
+
+  loadComponentsFromBackend();
+}, []);
   // --- DYNAMICALLY DERIVED STATE (ZERO STALE DERIVED VALUES) ---
 
   const computedCs = useMemo(() => {
@@ -1234,16 +1319,32 @@ componentSearchResults={componentSearchResults}
                             ).trim();
 
                             return {
-                              id: rawId,
-                              lot: lotId,
-                              v,
-                              reason: 'Imported burn-in record',
-                              confidence: 88
-                            };
+  id: rawId,
+  lot: lotId,
+
+  // Store measurements in the format expected by MongoDB
+  value0h: v0,
+  value24h: v24,
+  value96h: v96,
+  value168h: v168,
+
+  // Keep v for the existing frontend calculations
+  v: [v0, v24, v96, v168],
+
+  reason: 'Imported burn-in record',
+  confidence: 88
+};
                           })
                           .filter(Boolean);
 
                         if (parsed.length > 0) {
+                          uploadComponentsToBackend(parsed)
+  .then((result) => {
+    console.log("Saved to MongoDB:", result);
+  })
+  .catch((error) => {
+    console.error("MongoDB upload failed:", error);
+  });
                           setRawDataset(parsed);
                           setSel(parsed[0].id);
                           setSelectedLot(parsed[0].lot);
